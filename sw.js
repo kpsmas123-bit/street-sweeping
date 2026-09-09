@@ -1,6 +1,6 @@
 /* Cache the shell and both cities so the app answers with no signal.
    Bump CACHE when the ETL republishes data. */
-var CACHE = 'sweeping-v5';   /* bump on every deploy that moves or renames a file */
+var CACHE = 'sweeping-v6';   /* bump on every deploy that moves or renames a file */
 var ASSETS = [
   './', './index.html', './app.js', './style.css', './manifest.json',
   'data/berkeley.json', 'data/oakland.json', 'data/holidays.json',
@@ -42,8 +42,18 @@ self.addEventListener('fetch', function (e) {
   if (e.request.method !== 'GET') return;
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
 
+  /* GitHub Pages serves the app shell with Cache-Control: max-age=600, so after
+     a deploy a returning visitor can run up to ten minutes of stale JavaScript
+     against fresh data -- and a schema change between the two shows wrong
+     answers rather than failing loudly. Revalidate the shell against the network
+     every time; it is a few tens of kB. The city data keeps normal caching,
+     since it is megabytes and only changes monthly. */
+  var shell = url.origin === location.origin &&
+              /\.(html|js|css|webmanifest)$|\/$|manifest\.json$/.test(url.pathname);
+  var request = shell ? new Request(e.request, { cache: 'reload' }) : e.request;
+
   e.respondWith(
-    fetch(e.request).then(function (res) {
+    fetch(request).then(function (res) {
       /* Never cache opaque or error responses -- they poison the offline copy. */
       if (res && res.ok && res.type === 'basic') {
         var copy = res.clone();
