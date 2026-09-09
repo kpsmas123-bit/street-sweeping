@@ -355,8 +355,13 @@ function onHeading(e) {
   if (!hint) return;
   var names = ['north', 'north-east', 'east', 'south-east',
                'south', 'south-west', 'west', 'north-west'];
+  /* "your side faces north" was read as "you are on the north side". Name the
+     side explicitly and say where to look for it. */
   hint.textContent = 'You are facing ' + names[Math.round(deg / 45) % 8] +
-    (side && side.f ? ' · your side faces ' + FACING[side.f] : '');
+    (side && side.f
+      ? '. The ' + side.d + ' side (' + (side.a || '') + ') is the ' +
+        FACING[side.f] + ' kerb.'
+      : '');
 }
 
 function startCompass() {
@@ -464,107 +469,102 @@ function setStatus(text, tone) {
 
 var FACING = { N: 'north', E: 'east', S: 'south', W: 'west' };
 
-function sideLabel(side, index) {
-  /* The house number is the reliable check -- you read it off the nearest door.
-     The compass is the parenthetical, for when no number is in sight. */
-  var facing = side.f ? ' (' + FACING[side.f] + ')' : '';
-  if (side.d === 'odd')  return 'Odd' + (side.a ? ' · ' + side.a : '') + facing;
-  if (side.d === 'even') return 'Even' + (side.a ? ' · ' + side.a : '') + facing;
-  if (side.d === 'both') return 'This block' + facing;
-  return 'Side ' + (index === 0 ? 'A' : 'B') + facing;
-}
 
-function renderSidePicker() {
-  var wrap = $('sidepick');
-  wrap.innerHTML = '';
-  if (current.s.length < 2) return;
-  current.s.forEach(function (side, i) {
-    var b = document.createElement('button');
-    b.type = 'button';
-    b.setAttribute('role', 'tab');
-    b.setAttribute('aria-selected', String(i === chosen));
-    b.innerHTML = '<span class="swatch" style="background:' + SIDE_COLOR[i] + '"></span>' +
-                  sideLabel(side, i);
-    b.onclick = function () {
-      chosen = i;
-      renderSidePicker();
-      renderVerdict();
-      paintSides();
-      measureDetents();          /* the caveat can appear and change the height */
-    };
-    wrap.appendChild(b);
-  });
-}
-
-function renderVerdict() {
-  var side = current.s[chosen];
-  var now = new Date();
+function verdictFor(side, now) {
+  /* One side's answer as {tone, headline, detail} -- no pre-selection anywhere,
+     because the app cannot know which side the car is on. */
   var r = evaluate(side, now);
-  var head = $('headline'), detail = $('detail'), caveat = $('caveat');
-
   if (r.state === 'active') {
-    head.textContent = 'Move now';
-    head.dataset.tone = 'now';
-    detail.textContent = 'Sweeping until ' + fmtTime(r.end) + ' today.';
-  } else if (r.state === 'today') {
+    return { tone: 'now', headline: 'Move now',
+             detail: 'Sweeping until ' + fmtTime(r.end) + ' today.' };
+  }
+  if (r.state === 'today') {
     var hrs = Math.floor(r.minsAway / 60), mins = r.minsAway % 60;
-    head.textContent = hrs >= 1 ? 'Move within ' + hrs + 'h ' + mins + 'm'
-                                : 'Move within ' + mins + ' min';
-    head.dataset.tone = r.minsAway <= 120 ? 'now' : 'soon';
-    detail.textContent = 'Sweeping today, ' + fmtTime(side.t[0]) + '–' + fmtTime(side.t[1]) + '.';
-  } else if (r.state === 'holiday') {
-    head.textContent = "You're fine — city holiday";
-    head.dataset.tone = 'ok';
-    detail.textContent = 'No sweeping today. Next sweep ' +
-      (r.next ? fmtDate(r.next, now) : 'not scheduled') +
-      (side.t && r.next ? ', ' + fmtTime(side.t[0]) + '–' + fmtTime(side.t[1]) : '') + '.';
-  } else if (r.state === 'today_no_time') {
-    head.textContent = 'Sweeps today';
-    head.dataset.tone = 'soon';
-    detail.textContent = 'The city lists a sweep day but no time for this block.';
-  } else if (r.next) {
-    var soon = (r.next - now) < 36e5 * 18;
+    return { tone: r.minsAway <= 120 ? 'now' : 'soon',
+             headline: hrs >= 1 ? 'Move within ' + hrs + 'h ' + mins + 'm'
+                                : 'Move within ' + mins + ' min',
+             detail: 'Sweeping today, ' + fmtTime(side.t[0]) + '–' + fmtTime(side.t[1]) + '.' };
+  }
+  if (r.state === 'holiday') {
+    return { tone: 'ok', headline: 'Clear — city holiday',
+             detail: 'No sweeping today. Next sweep ' +
+                     (r.next ? fmtDate(r.next, now) : 'not scheduled') + '.' };
+  }
+  if (r.state === 'today_no_time') {
+    return { tone: 'soon', headline: 'Sweeps today',
+             detail: 'The city lists a sweep day but no time for this side.' };
+  }
+  if (r.next) {
     if (!side.t) {
-      /* No time window on this side, so "move by tonight" would be asserting a
-         deadline the city never published. Name the day and stop there. */
-      head.textContent = 'Sweeps ' + fmtDate(r.next, now);
-      head.dataset.tone = soon ? 'soon' : 'muted';
-      detail.textContent = 'No sweep time is listed for this side.';
-    } else {
-      head.textContent = soon ? 'Move by tonight' : "You're fine";
-      head.dataset.tone = soon ? 'soon' : 'ok';
-      detail.textContent = 'Next sweep ' + fmtDate(r.next, now) +
-                           ', ' + fmtTime(side.t[0]) + '–' + fmtTime(side.t[1]) + '.';
+      return { tone: 'muted', headline: 'Sweeps ' + fmtDate(r.next, now),
+               detail: 'No sweep time is listed for this side.' };
     }
-  } else {
-    head.textContent = 'No sweeping listed';
-    head.dataset.tone = 'muted';
-    detail.textContent = describe(side);
+    return { tone: 'ok', headline: 'Clear',
+             detail: 'Next sweep ' + fmtDate(r.next, now) + ', ' +
+                     fmtTime(side.t[0]) + '–' + fmtTime(side.t[1]) + '.' };
   }
+  return { tone: 'muted', headline: 'No sweeping listed', detail: describe(side) };
+}
 
-  /* Say what we do not know, rather than papering over it. */
-  var notes = {
-    no_time:    'The city lists a sweep day for this block but no time window, so ' +
-                'we cannot tell you when to move. Check the sign.',
-    no_signage: 'The city records no posted signage on this block. Treat the sign ' +
-                'you see as the only authority.',
-    flagged:    'The city flagged this block for re-checking in its own data. ' +
-                'Lower confidence than usual.',
-    unknown:    'We could not read a schedule for this block. Go by the sign.'
-  };
-  var note = notes[side.c];
-  if (r.state === 'holiday' && holidays && holidays.rule === 'no_sweep_unknown_makeup') {
-    note = 'Oakland publishes this as a no-sweeping holiday but does not say ' +
-           'whether the missed sweep is made up later. Check the sign.';
-  }
-  caveat.hidden = !note;
-  if (note) caveat.textContent = note;
+var NOTES = {
+  no_time:    'The city lists a sweep day for this side but no time window. Check the sign.',
+  no_signage: 'The city records no posted signage here. The sign you see is the only authority.',
+  flagged:    'The city flagged this block for re-checking in its own data.',
+  unknown:    'We could not read a schedule for this side. Go by the sign.'
+};
 
-  $('remind').hidden = !icsRule(side);
-  $('showcompass').hidden = compassOn || !side.f;
-  $('compass').hidden = !compassOn;
+/* Both sides, always, side by side. The previous build pre-selected one and
+   printed a single confident verdict for it -- which is a coin flip on any
+   street whose two sides sweep on different days, and Parker St's do: odd on
+   the 2nd Wednesday, even on the 2nd Tuesday. Showing one answer for an
+   unconfirmed side is how you end up on the wrong curb. */
+function renderSides() {
+  var wrap = $('sides');
+  var now = new Date();
+  wrap.innerHTML = '';
+
+  current.s.forEach(function (side, i) {
+    var v = verdictFor(side, now);
+    var card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'side-card';
+    card.setAttribute('aria-pressed', String(i === chosen));
+
+    var who = side.d === 'odd' ? 'Odd' : side.d === 'even' ? 'Even'
+            : side.d === 'both' ? 'This block' : 'Side ' + (i === 0 ? 'A' : 'B');
+    var bits = [];
+    if (side.a) bits.push(side.a);
+    if (side.f) bits.push(FACING[side.f] + ' side');
+
+    card.innerHTML =
+      '<span class="side-top">' +
+        '<span class="swatch" style="background:' + SIDE_COLOR[i] + '"></span>' +
+        '<span class="side-who">' + who + '</span>' +
+        (bits.length ? '<span class="side-bits">' + bits.join(' · ') + '</span>' : '') +
+      '</span>' +
+      '<span class="side-verdict" data-tone="' + v.tone + '">' + v.headline + '</span>' +
+      '<span class="side-detail">' + v.detail + '</span>' +
+      '<span class="side-sched">' + describe(side) + '</span>' +
+      (NOTES[side.c] ? '<span class="side-note">' + NOTES[side.c] + '</span>' : '');
+
+    card.onclick = function () {
+      chosen = i;
+      renderSides();
+      paintSides();
+      measureDetents();
+    };
+    wrap.appendChild(card);
+  });
+
   $('street').textContent = current.n || 'This block';
-  $('addr').textContent = describe(side);
+  $('addr').textContent = 'Which side are you on? Check the nearest house number.';
+
+  var side = current.s[chosen];
+  $('remind').hidden = !icsRule(side);
+  $('remind').textContent = 'Add reminder — ' +
+    (side.d === 'odd' || side.d === 'even' ? side.d + ' side' : 'this side');
+  $('showcompass').hidden = compassOn || !current.s.some(function (x) { return x.f; });
+  $('compass').hidden = !compassOn;
 }
 
 /* --------------------------------------------------------------------- map */
@@ -682,8 +682,7 @@ function onPosition(pos) {
       $('vintage').textContent = city.vintage + ' Schedules can change without the data changing.';
       showMap(lon, lat);
       $('sheet').hidden = false;
-      renderSidePicker();
-      renderVerdict();
+      renderSides();
       measureDetents();
       setSheetY(0, false);
     })
@@ -728,11 +727,12 @@ $('showcompass').onclick = startCompass;
 
 $('report').onclick = function () {
   var side = current ? current.s[chosen] : null;
+  var v = side ? verdictFor(side, new Date()) : null;
   var body = encodeURIComponent(
     'Block: ' + (current ? current.n : '?') + '\n' +
     'Segment: ' + (current ? current.i : '?') + '\n' +
-    'Side shown: ' + (side ? sideLabel(side, chosen) : '?') + '\n' +
-    'App said: ' + $('headline').textContent + ' — ' + $('detail').textContent + '\n\n' +
+    'Side: ' + (side ? side.d + ' ' + (side.a || '') + ' ' + (side.f || '') : '?') + '\n' +
+    'App said: ' + (v ? v.headline + ' — ' + v.detail : '?') + '\n\n' +
     'The posted sign says: ');
   window.location.href = 'mailto:?subject=' +
     encodeURIComponent('Street sweeping mismatch') + '&body=' + body;

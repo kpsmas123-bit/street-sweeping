@@ -11,7 +11,7 @@
 <title>Street Sweeping</title>
 <link rel="manifest" href="manifest.json">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.css">
-<link rel="stylesheet" href="style.css?v=10">
+<link rel="stylesheet" href="style.css?v=11">
 </head>
 <body>
 
@@ -33,15 +33,10 @@
 
   <div id="sheet-body" class="sheet-scroll">
 
-  <!-- Side chooser. GPS cannot tell two parking lanes apart, so the user does. -->
-  <div id="sidepick" class="segmented" role="tablist" aria-label="Which side are you parked on?"></div>
-
-  <div class="verdict">
-    <p id="headline" class="headline">—</p>
-    <p id="detail" class="detail"></p>
-  </div>
-
-  <p id="caveat" class="caveat" hidden></p>
+  <!-- Both sides, always. GPS cannot tell two parking lanes apart, and a single
+       verdict for a guessed side is wrong half the time on any street whose
+       sides sweep on different days. -->
+  <div id="sides" class="sides" aria-label="Both sides of this block"></div>
 
   <button id="showcompass" class="secondary" type="button" hidden>Which way is that?</button>
 
@@ -62,6 +57,6 @@
 </section>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.js"></script>
-<script src="app.js?v=10"></script>
+<script src="app.js?v=11"></script>
 </body>
 </html>

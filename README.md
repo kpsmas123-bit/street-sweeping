@@ -104,6 +104,21 @@ barely moved), tap it to cycle, or use the keyboard. The map re-centres on each
 stop so the block stays clear of whatever the sheet still covers; that offset has
 a single owner, since applying it in two places once pushed the block off screen.
 
+## Both sides, always
+
+The app never shows a single verdict. Each side states its own, and you match it
+to the nearest house number.
+
+An earlier build pre-selected one side and printed one confident answer for it.
+That is a coin flip on any street whose sides sweep on different days — and they
+usually do. Parker St sweeps odd/north on the 2nd Wednesday and even/south on the
+2nd Tuesday, so at 10am on a 2nd Wednesday the two sides read "Move now" and
+"Clear". Collapsing that into one headline is how the app puts someone on the
+wrong kerb, which it did.
+
+Tapping a card only highlights that side on the map. Nothing about the answer
+depends on the app guessing where the car is.
+
 ## Which way the side faces
 
 Each side is tagged with the compass direction it faces, so "east side" is
