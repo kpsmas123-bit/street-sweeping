@@ -88,6 +88,22 @@ the UI says so.
 Name normalization has to absorb the GIS's quirks: it uppercases, splits
 "McGee" into "MC GEE", and truncates at 20 characters ("MARTIN LUTHER KING J").
 
+## The sheet
+
+The map is full-bleed; the answer sits in a sheet over it with three stops, the
+way an iOS sheet behaves:
+
+| stop | what stays visible |
+|---|---|
+| open | everything — sides, verdict, compass, reminder, the disclaimer |
+| peek | down to the end of the verdict: the answer, still readable |
+| minimal | the handle and the street name — the map gets ~87% of the screen |
+
+Drag the handle, flick it (velocity carries to the next stop even if the finger
+barely moved), tap it to cycle, or use the keyboard. The map re-centres on each
+stop so the block stays clear of whatever the sheet still covers; that offset has
+a single owner, since applying it in two places once pushed the block off screen.
+
 ## Which way the side faces
 
 Each side is tagged with the compass direction it faces, so "east side" is

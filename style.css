@@ -43,7 +43,7 @@ html, body {
   overscroll-behavior: none;
 }
 
-#map { position: fixed; inset: 0 0 42vh 0; background: var(--bg); }
+#map { position: fixed; inset: 0; background: var(--bg); }
 
 /* --- status pill ---------------------------------------------------------- */
 .status {
@@ -60,20 +60,37 @@ html, body {
 /* --- bottom sheet --------------------------------------------------------- */
 .sheet {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
-  max-height: 74vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  max-height: 82vh;
   background: var(--surface);
   border-radius: var(--radius) var(--radius) 0 0;
   box-shadow: 0 -1px 0 var(--separator), 0 -12px 40px #00000024;
-  padding: 6px var(--pad) calc(env(safe-area-inset-bottom, 0px) + 20px);
+  padding: 0 var(--pad) calc(env(safe-area-inset-bottom, 0px) + 20px);
+  /* Slid down by --y. Dragging sets it directly; releasing animates to a detent. */
+  transform: translateY(var(--y, 0px));
   animation: rise .28s cubic-bezier(.32, .72, 0, 1);
+  touch-action: pan-y;
 }
-@keyframes rise { from { transform: translateY(24px); opacity: 0 } }
+.sheet.snapping { transition: transform .32s cubic-bezier(.32, .72, 0, 1); }
+/* Only the content below the handle scrolls, so a drag on the handle is never
+   competing with a scroll. */
+.sheet-scroll { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+@keyframes rise { from { opacity: 0 } }   /* transform belongs to the drag now */
 @media (prefers-reduced-motion: reduce) { .sheet { animation: none } }
 
-.grabber {
-  width: 36px; height: 5px; margin: 6px auto 14px;
-  border-radius: 3px; background: var(--label-3);
+/* The drag target: a comfortable 44pt strip, with the visible pill centred in
+   it. Grabbing anywhere in the header works, which is what people try first. */
+.handle {
+  display: block; width: 100%; height: 34px; padding: 0; border: 0;
+  background: none; cursor: grab; touch-action: none;
+  -webkit-user-select: none; user-select: none;
 }
+.handle:active { cursor: grabbing; }
+.grabber {
+  display: block; width: 36px; height: 5px; margin: 14px auto 0;
+  border-radius: 3px; background: var(--label-3);
+  transition: background .18s ease;
+}
+.handle:hover .grabber { background: var(--label-2); }
 
 .sheet-head h1 {
   margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -.35px;

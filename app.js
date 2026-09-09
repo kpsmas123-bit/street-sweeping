@@ -160,6 +160,138 @@ function fmtDate(d, now) {
 
 
 
+
+/* ----------------------------------------------------------- bottom sheet */
+/* The grabber looked draggable and did nothing. Now it is: drag or tap it to
+   slide the sheet down to a peek -- street, side and verdict stay on screen --
+   which uncovers the full-bleed map underneath so you can see the whole block
+   and the surrounding streets. */
+var sheetY = 0;          /* current translateY, px */
+var detents = [0];       /* stops, ascending: 0 is fully open */
+var mapOffset = 0;       /* px already panned to compensate for the sheet */
+
+function sheetEl() { return $('sheet'); }
+function peekLimit() { return detents[detents.length - 1]; }
+
+function measureDetents() {
+  var sheet = sheetEl();
+  var verdict = document.querySelector('.verdict');
+  var head = document.querySelector('.sheet-head');
+  if (!sheet || !verdict || !head) return;
+  var h = sheet.offsetHeight;
+  /* Three stops, the way an iOS sheet does it:
+       open    everything
+       peek    down to the end of the verdict -- the answer, still readable
+       minimal just the handle and the street name, so the map is effectively full
+     Minimal is the point of dragging down at all: it uncovers the whole block
+     and the streets around it. */
+  var peek = Math.max(0, h - (verdict.offsetTop + verdict.offsetHeight + 12));
+  var minimal = Math.max(0, h - (head.offsetTop + head.offsetHeight + 14));
+  detents = [0, peek, minimal].filter(function (v, i, a) {
+    return i === 0 || v - a[i - 1] > 24;      /* drop stops too close to be distinct */
+  });
+}
+
+function setSheetY(y, animate) {
+  var sheet = sheetEl();
+  sheetY = Math.max(0, Math.min(peekLimit(), y));
+  sheet.classList.toggle('snapping', !!animate);
+  sheet.style.setProperty('--y', sheetY + 'px');
+  var open = sheetY < 1;
+  $('handle').setAttribute('aria-expanded', String(open));
+  $('handle').setAttribute('aria-label',
+    open ? 'Collapse details to see the map' : 'Expand details');
+  syncMapToSheet();
+}
+
+/* Keep the block centred in whatever map area the sheet is not covering. */
+function syncMapToSheet() {
+  if (!map) return;
+  var visible = sheetEl().offsetHeight - sheetY;
+  var want = visible / 2;
+  var delta = want - mapOffset;
+  if (Math.abs(delta) < 1) return;
+  map.panBy([0, delta], { duration: 0 });
+  mapOffset = want;
+}
+
+function snap(velocity) {
+  var i = nearestDetent(sheetY);
+  /* A deliberate flick carries to the next stop even if the finger barely moved,
+     which is how these are expected to feel. */
+  if (velocity > 0.5) i = Math.min(detents.length - 1, i + 1);
+  else if (velocity < -0.5) i = Math.max(0, i - 1);
+  setSheetY(detents[i], true);
+}
+
+function nearestDetent(y) {
+  var best = 0;
+  for (var i = 1; i < detents.length; i++) {
+    if (Math.abs(detents[i] - y) < Math.abs(detents[best] - y)) best = i;
+  }
+  return best;
+}
+
+/* Tap and keyboard cycle open -> peek -> minimal -> open. */
+function cycleDetent() {
+  measureDetents();
+  var next = (nearestDetent(sheetY) + 1) % detents.length;
+  setSheetY(detents[next], true);
+}
+
+function initSheetDrag() {
+  var handle = $('handle');
+  var startY = 0, startSheetY = 0, lastY = 0, lastT = 0, velocity = 0, dragging = false;
+
+  handle.addEventListener('pointerdown', function (e) {
+    measureDetents();
+    dragging = true;
+    startY = lastY = e.clientY;
+    lastT = e.timeStamp;
+    startSheetY = sheetY;
+    velocity = 0;
+    sheetEl().classList.remove('snapping');
+    handle.setPointerCapture(e.pointerId);
+  });
+
+  handle.addEventListener('pointermove', function (e) {
+    if (!dragging) return;
+    e.preventDefault();
+    var dt = e.timeStamp - lastT;
+    if (dt > 0) velocity = (e.clientY - lastY) / dt;
+    lastY = e.clientY;
+    lastT = e.timeStamp;
+    setSheetY(startSheetY + (e.clientY - startY), false);
+  });
+
+  function end(e) {
+    if (!dragging) return;
+    dragging = false;
+    try { handle.releasePointerCapture(e.pointerId); } catch (err) {}
+    /* A tap (barely moved) toggles, which is what people try before dragging. */
+    if (Math.abs(lastY - startY) < 4) {
+      cycleDetent();
+    } else {
+      snap(velocity);
+    }
+  }
+  handle.addEventListener('pointerup', end);
+  handle.addEventListener('pointercancel', end);
+
+  handle.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      cycleDetent();
+    }
+  });
+
+  window.addEventListener('resize', function () {
+    var i = nearestDetent(sheetY);
+    measureDetents();
+    setSheetY(detents[Math.min(i, detents.length - 1)], false);
+  });
+}
+
 /* --------------------------------------------------------------- compass */
 /* "East side" only helps if you know which way east is. iOS needs an explicit
    permission request from inside a user gesture, so this is a button rather
@@ -320,7 +452,13 @@ function renderSidePicker() {
     b.setAttribute('aria-selected', String(i === chosen));
     b.innerHTML = '<span class="swatch" style="background:' + SIDE_COLOR[i] + '"></span>' +
                   sideLabel(side, i);
-    b.onclick = function () { chosen = i; renderSidePicker(); renderVerdict(); paintSides(); };
+    b.onclick = function () {
+      chosen = i;
+      renderSidePicker();
+      renderVerdict();
+      paintSides();
+      measureDetents();          /* the caveat can appear and change the height */
+    };
     wrap.appendChild(b);
   });
 }
@@ -513,6 +651,8 @@ function onPosition(pos) {
       $('sheet').hidden = false;
       renderSidePicker();
       renderVerdict();
+      measureDetents();
+      setSheetY(0, false);
     })
     .catch(function () { setStatus('Could not load sweeping data.', 'error'); });
 }
@@ -540,16 +680,16 @@ function showMap(lon, lat) {
     paintContext(lon, lat);
     paintSides();
     new maplibregl.Marker({ color: '#007aff' }).setLngLat([lon, lat]).addTo(map);
-    /* The sheet overlaps the bottom of the map element, so a block centred in
-       the element is still half-hidden. Nudge in pixel space -- panBy is exact
-       and needs no projection math of our own, which is what went wrong when
-       this tried to shift the centre in degrees. */
-    var hidden = document.getElementById('sheet').offsetHeight -
-                 (window.innerHeight - document.getElementById('map').offsetHeight);
-    if (hidden > 0) map.panBy([0, hidden / 2], { duration: 0 });
+    /* The map is full-bleed and the sheet floats over its lower half, so the
+       block needs lifting clear of it. syncMapToSheet owns that offset and
+       re-applies it whenever the sheet is dragged -- doing it here as well
+       double-counted and pushed the block off screen. */
+    mapOffset = 0;
+    syncMapToSheet();
   });
 }
 
+initSheetDrag();
 $('remind').onclick = downloadIcs;
 $('showcompass').onclick = startCompass;
 

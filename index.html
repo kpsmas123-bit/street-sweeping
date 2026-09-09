@@ -22,12 +22,16 @@
 
 <!-- The answer. A bottom sheet, the way iOS does it. -->
 <section id="sheet" class="sheet" hidden aria-live="polite">
-  <div class="grabber" aria-hidden="true"></div>
+  <button id="handle" class="handle" type="button"
+          aria-expanded="true" aria-controls="sheet-body"
+          aria-label="Collapse details to see the map"><span class="grabber"></span></button>
 
   <header class="sheet-head">
     <h1 id="street">—</h1>
     <p id="addr" class="addr"></p>
   </header>
+
+  <div id="sheet-body" class="sheet-scroll">
 
   <!-- Side chooser. GPS cannot tell two parking lanes apart, so the user does. -->
   <div id="sidepick" class="segmented" role="tablist" aria-label="Which side are you parked on?"></div>
@@ -54,6 +58,7 @@
     <button id="report" class="link" type="button">Sign says something different?</button>
     <p id="vintage" class="vintage"></p>
   </footer>
+  </div>
 </section>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.js"></script>
