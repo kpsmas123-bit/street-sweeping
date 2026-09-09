@@ -293,10 +293,22 @@ function initSheetDrag() {
     }
   });
 
-  window.addEventListener('resize', function () {
+  function relayout() {
     var i = nearestDetent(sheetY);
     measureDetents();
     setSheetY(detents[Math.min(i, detents.length - 1)], false);
+    /* A map built while the page had no size keeps a zero-sized canvas and
+       never draws -- which happens when the PWA is launched into the background
+       or the tab is restored. Re-measuring it is what brings it back. */
+    if (map) {
+      map.resize();
+      syncMapToSheet();
+    }
+  }
+  window.addEventListener('resize', relayout);
+  window.addEventListener('orientationchange', relayout);
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible') relayout();
   });
 }
 
