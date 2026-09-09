@@ -174,3 +174,19 @@ correction often keeps the row count identical.
   March 2022. The UI says so rather than implying freshness.
 - No enforcement-vs-sweeping distinction: a swept street may still be ticketed,
   and vice versa.
+
+## Deploying
+
+GitHub Pages serves every file with `Cache-Control: max-age=600`, so a returning
+visitor can run ten minutes of stale JavaScript against fresh data — and a schema
+change between the two shows a wrong answer rather than failing loudly.
+
+Two defences, and you need both:
+
+1. `index.html` references `app.js?v=N` and `style.css?v=N`. **Bump `N` in
+   `index.html` and in `sw.js`'s asset list whenever either file changes.**
+2. The service worker refetches the shell with `cache: 'reload'`, which covers
+   returning visitors once it is installed. It cannot help the very first load
+   after a deploy, which is what (1) is for.
+
+Bump `CACHE` in `sw.js` on any deploy that renames or moves a file.
