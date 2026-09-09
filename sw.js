@@ -1,6 +1,6 @@
 /* Cache the shell and both cities so the app answers with no signal.
    Bump CACHE when the ETL republishes data. */
-var CACHE = 'sweeping-v3';   /* bump on every deploy that moves or renames a file */
+var CACHE = 'sweeping-v4';   /* bump on every deploy that moves or renames a file */
 var ASSETS = [
   './', './index.html', './app.js', './style.css', './manifest.json',
   'data/berkeley.json', 'data/oakland.json', 'data/holidays.json',

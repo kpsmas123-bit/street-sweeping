@@ -47,6 +47,12 @@ picks the nearest sign to the GPS point, which routinely grabs the opposite curb
 **Oakland** — one ArcGIS layer, 23,862 centerlines, schedules as coded values in
 `DAY_ODD`/`TIME_ODD`/`DAY_EVEN`/`TIME_EVEN`. Side is modeled by address parity.
 
+`L_*` and `R_*` are left and right of the *digitization* direction, which is
+arbitrary — odd addresses are on the left only about 60% of the time. Assuming
+odd is always left mislabels 4,992 of the 12,226 features that populate both
+ranges, printing "Odd" beside an even address range. Assign the range to the
+side by its own parity instead.
+
 The `SIDEOFSTREET` field is a red herring: it is blank on 97% of records. The
 real marker is `MS` in a *day* field, which never appears in both day fields at
 once — `DAY_ODD = 'MS'` means this line carries the even side only. 2,059 records
@@ -82,6 +88,33 @@ the UI says so.
 Name normalization has to absorb the GIS's quirks: it uppercases, splits
 "McGee" into "MC GEE", and truncates at 20 characters ("MARTIN LUTHER KING J").
 
+## Which way the side faces
+
+Each side is tagged with the compass direction it faces, so "east side" is
+usable when no house number is in sight. It is derived, not published: take the
+centerline's bearing, and which hand of the line the side's addresses sit on
+(`L_*` is left of the digitization direction in both cities), and turn 90°.
+
+Guards, because a wrong compass letter points someone at the wrong curb:
+
+- Blocks that bend are skipped — a curved street has no single bearing.
+  Straightness (end-to-end over path length) must be at least 0.9.
+- The two sides of a street must come out opposite. If they do not, the tag is
+  dropped from both rather than guessed. This runs again after major-street
+  pairs are folded, since those two sides come from two separate features.
+
+That leaves a compass on 91% of Oakland sides and 87% of Berkeley's, with zero
+inconsistent pairs in either city.
+
+Berkeley's PDFs *do* carry a compass column, and it is not used for this: it
+contradicts its own address ranges on 31 of 708 rows. Deriving both cities the
+same way keeps the letter consistent with the address range printed beside it.
+
+**The address range is the reliable check** — you confirm it by reading the
+nearest door. The compass is the parenthetical, and the app presents it that way.
+The optional live compass (`deviceorientation`, permission-gated on iOS) exists
+to make that parenthetical actionable.
+
 ## Holidays
 
 Neither dataset carries holiday logic, so `data/holidays.json` is hand-maintained
@@ -114,7 +147,9 @@ correction often keeps the row count identical.
 
 ## Known gaps
 
-- 88 Berkeley blocks have two schedules but no side attribution.
+- 87 Berkeley blocks have two schedules but no side attribution.
+- 9% of Oakland sides and 13% of Berkeley's have no compass tag, because the
+  block bends or the two sides disagreed. Those show the address range alone.
 - Berkeley's PDFs give AM/PM; the 9–12 / 12:30–3:30 clock times come from the
   matching GIS route codes (`1stFRI912`, `1stFRI1230330`), so they are derived
   rather than stated in the PDF.

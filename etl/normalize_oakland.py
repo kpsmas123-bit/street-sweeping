@@ -117,21 +117,58 @@ def street_name(a):
     return ' '.join(p for p in parts if p)
 
 
+def _parity(value):
+    v = clean(value)
+    if not v.isdigit():
+        return None
+    return 'odd' if int(v) % 2 else 'even'
+
+
+def address_sides(attrs):
+    """Which physical side of the centreline carries the odd addresses.
+
+    L_* and R_* are left and right of the digitisation direction (TIGER lineage:
+    the layer still carries FCC codes and DYNAMAP_ID). Digitisation direction is
+    arbitrary, so odd is on the left only about 60% of the time -- assuming it is
+    always left mislabels 4,992 of the 12,226 features that populate both ranges,
+    printing "Odd" beside an even address range.
+
+    Returns {'odd': ('left'|'right', from, to), 'even': (...)} for whichever
+    sides can be resolved.
+    """
+    L = ('left', attrs.get('L_F_ADD'), attrs.get('L_T_ADD'))
+    R = ('right', attrs.get('R_F_ADD'), attrs.get('R_T_ADD'))
+    out = {}
+    for which, lo, hi in (L, R):
+        par = _parity(lo) or _parity(hi)
+        if par and par not in out:
+            out[par] = (which, clean(lo) or None, clean(hi) or None)
+    # Only one side has numbers: the other side is the opposite hand, range unknown.
+    if len(out) == 1:
+        (known,) = list(out)
+        other = 'even' if known == 'odd' else 'odd'
+        out[other] = ('right' if out[known][0] == 'left' else 'left', None, None)
+    return out
+
+
 def normalize(attrs, geometry):
     """One source feature -> one normalized segment with 1-2 sides, or None."""
+    addr = address_sides(attrs)
     sides = []
-    for label, dayf, timef, f_add, t_add in (
-        ('odd',  'DAY_ODD',  'TIME_ODD',  'L_F_ADD', 'L_T_ADD'),
-        ('even', 'DAY_EVEN', 'TIME_EVEN', 'R_F_ADD', 'R_T_ADD'),
+    for label, dayf, timef in (
+        ('odd',  'DAY_ODD',  'TIME_ODD'),
+        ('even', 'DAY_EVEN', 'TIME_EVEN'),
     ):
         parsed = parse_side(attrs.get(dayf), attrs.get(timef), attrs.get('DOUBLECK'))
         if parsed is None:
             continue
         sched, confidence = parsed
+        hand, lo, hi = addr.get(label, (None, None, None))
         sides.append({
             'side': label,
-            'addr_from': clean(attrs.get(f_add)) or None,
-            'addr_to': clean(attrs.get(t_add)) or None,
+            'hand': hand,                 # 'left'/'right' of digitisation, for compass
+            'addr_from': lo,
+            'addr_to': hi,
             'schedule': sched,
             'confidence': confidence,
             'raw': {'day': clean(attrs.get(dayf)), 'time': clean(attrs.get(timef))},

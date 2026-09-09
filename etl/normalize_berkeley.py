@@ -323,9 +323,33 @@ def match_pdf(attrs, index):
     return [out[k] for k in ('odd', 'even') if k in out]
 
 
-def side_from_pdf(row):
+def _hand_for(row, attrs):
+    """Which hand of the centreline this PDF row's addresses sit on.
+
+    F_ADDL/T_ADDL is the left of the digitisation direction and F_ADDR/T_ADDR
+    the right, the same TIGER convention Oakland uses. Match on parity, not on
+    range overlap: a PDF row spans many blocks, so its range overlaps both GIS
+    ranges and resolves nothing, but the parities separate cleanly.
+    """
+    def parity(a, b):
+        for v in (a, b):
+            if isinstance(v, int):
+                return 'odd' if v % 2 else 'even'
+        return None
+
+    left = parity(attrs.get('F_ADDL'), attrs.get('T_ADDL'))
+    right = parity(attrs.get('F_ADDR'), attrs.get('T_ADDR'))
+    if left == row['side'] and right != row['side']:
+        return 'left'
+    if right == row['side'] and left != row['side']:
+        return 'right'
+    return None
+
+
+def side_from_pdf(row, attrs=None):
     return {
         'side': row['side'],
+        'hand': _hand_for(row, attrs) if attrs else None,
         'addr_from': str(row['lo']),
         'addr_to': str(row['hi']),
         'schedule': S.make('nth_weekday', [row['ordinal']], [row['weekday']],

@@ -1,11 +1,11 @@
 {
  "berkeley": {
-  "bytes": 376943,
+  "bytes": 396823,
   "dropped_no_schedule": 1601,
   "segments": 1500
  },
  "oakland": {
-  "bytes": 2441756,
+  "bytes": 2588400,
   "dropped_no_schedule": 13475,
   "segments": 9867
  }

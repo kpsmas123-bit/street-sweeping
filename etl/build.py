@@ -107,6 +107,71 @@ def merge_major_street_pairs(segments):
     return others + merged
 
 
+# --- compass ---------------------------------------------------------------
+# Which way a side faces, derived from the centreline's bearing plus which hand
+# of the line that side's addresses sit on. The compass letter is a hint for
+# orienting yourself; the address range beside it stays the reliable check,
+# because a street that curves through a block has no single true bearing.
+def _bearing(pts):
+    """Digitisation bearing in degrees clockwise from north."""
+    (x1, y1), (x2, y2) = pts[0], pts[-1]
+    mx = 111320.0 * math.cos(math.radians((y1 + y2) / 2))
+    return (math.degrees(math.atan2((x2 - x1) * mx, (y2 - y1) * 110574.0)) + 360) % 360
+
+
+def _cardinal(deg):
+    deg %= 360
+    if deg < 45 or deg >= 315:
+        return 'N'
+    if deg < 135:
+        return 'E'
+    if deg < 225:
+        return 'S'
+    return 'W'
+
+
+def _straightness(pts):
+    """End-to-end distance over path length. A block that bends has no one facing."""
+    if len(pts) < 2:
+        return 0.0
+    total = 0.0
+    for a, b in zip(pts, pts[1:]):
+        mx = 111320.0 * math.cos(math.radians((a[1] + b[1]) / 2))
+        total += math.hypot((b[0] - a[0]) * mx, (b[1] - a[1]) * 110574.0)
+    (x1, y1), (x2, y2) = pts[0], pts[-1]
+    mx = 111320.0 * math.cos(math.radians((y1 + y2) / 2))
+    direct = math.hypot((x2 - x1) * mx, (y2 - y1) * 110574.0)
+    return 0.0 if total == 0 else direct / total
+
+
+def add_compass(seg):
+    """Tag each side with the compass direction it faces, where that is meaningful."""
+    pts = seg['geometry']['coordinates']
+    if len(pts) < 2 or _straightness(pts) < 0.9:
+        return seg                      # too curved for one bearing to describe
+    b = _bearing(pts)
+    for side in seg['sides']:
+        hand = side.get('hand')
+        if hand == 'left':
+            side['compass'] = _cardinal(b - 90)
+        elif hand == 'right':
+            side['compass'] = _cardinal(b + 90)
+
+    return drop_inconsistent_compass(seg)
+
+
+def drop_inconsistent_compass(seg):
+    """Two sides of one street must face opposite ways. If they do not, the hands
+    or the bearing are wrong for this block, so say nothing rather than point
+    someone at the wrong curb."""
+    tagged = [x for x in seg['sides'] if x.get('compass')]
+    if len(tagged) == 2 and {tagged[0]['compass'], tagged[1]['compass']} not in (
+            {'N', 'S'}, {'E', 'W'}):
+        for x in tagged:
+            x.pop('compass', None)
+    return seg
+
+
 # --- compact output ---------------------------------------------------------
 # The app parses this on a phone, so the wire format is terse: short keys, no
 # debug payload, and no GeoJSON-inside-a-string double escaping (which alone
@@ -130,6 +195,8 @@ def pack_side(side):
     lo, hi = side.get('addr_from'), side.get('addr_to')
     if lo and hi:
         out['a'] = '%s-%s' % (lo, hi)
+    if side.get('compass'):
+        out['f'] = side['compass']      # facing: N/E/S/W
     return out
 
 
@@ -161,9 +228,13 @@ def build_oakland():
         day_odd = OAK.clean(f['attributes'].get('DAY_ODD'))
         day_even = OAK.clean(f['attributes'].get('DAY_EVEN'))
         seg['_ms'] = OAK.SIDE_POINTER in (day_odd, day_even)
-        segs.append(seg)
+        segs.append(add_compass(seg))
     before = len(segs)
     segs = merge_major_street_pairs(segs)
+    # A folded pair's two sides came from two separate features, each tagged
+    # before the merge, so re-check them together.
+    for seg in segs:
+        drop_inconsistent_compass(seg)
     print('  oakland: %d features -> %d segments (%d major-street pairs folded)'
           % (len(raw), len(segs), before - len(segs)), file=sys.stderr)
     return segs
@@ -189,9 +260,10 @@ def build_berkeley():
         rows = BK.match_pdf(attrs, pdf_index)
         if rows:
             from_pdf += 1
-            segs.append(BK._segment(attrs, geom,
-                                    [BK.side_from_pdf(r) for r in rows],
-                                    [r['route'] for r in rows]))
+            segs.append(add_compass(BK._segment(
+                attrs, geom,
+                [BK.side_from_pdf(r, attrs) for r in rows],
+                [r['route'] for r in rows])))
             continue
 
         # 2. Otherwise fall back to the geometric route join, which gives the two
@@ -201,7 +273,7 @@ def build_berkeley():
             codes = BK.match_routes(path, route_index)
             if len(codes) == 2:
                 from_join += 1
-        segs.append(BK.normalize(attrs, geom, codes))
+        segs.append(add_compass(BK.normalize(attrs, geom, codes)))
 
     print('  berkeley: %d centerlines -- %d from the city schedule table '
           '(true odd/even), %d from the geometric route join (side unknown)'

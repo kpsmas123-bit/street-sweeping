@@ -159,6 +159,62 @@ function fmtDate(d, now) {
 }
 
 
+
+/* --------------------------------------------------------------- compass */
+/* "East side" only helps if you know which way east is. iOS needs an explicit
+   permission request from inside a user gesture, so this is a button rather
+   than something that starts on its own. */
+var compassOn = false;
+
+function headingFrom(e) {
+  if (typeof e.webkitCompassHeading === 'number') return e.webkitCompassHeading;
+  if (e.absolute && typeof e.alpha === 'number') return 360 - e.alpha;
+  return null;
+}
+
+var needleAngle = 0;      /* unwrapped, so the needle never spins the long way */
+
+function onHeading(e) {
+  var deg = headingFrom(e);
+  if (deg === null) return;
+  var needle = $('needle');
+  if (needle) {
+    /* Rotate by the shortest delta and accumulate. Setting the raw angle makes
+       the needle whip 350 degrees backwards every time it crosses north. */
+    var delta = ((-deg - needleAngle) % 360 + 540) % 360 - 180;
+    needleAngle += delta;
+    needle.style.transform = 'rotate(' + needleAngle + 'deg)';
+  }
+  var side = current && current.s[chosen];
+  var hint = $('facing');
+  if (!hint) return;
+  var names = ['north', 'north-east', 'east', 'south-east',
+               'south', 'south-west', 'west', 'north-west'];
+  hint.textContent = 'You are facing ' + names[Math.round(deg / 45) % 8] +
+    (side && side.f ? ' · your side faces ' + FACING[side.f] : '');
+}
+
+function startCompass() {
+  var go = function () {
+    window.addEventListener('deviceorientationabsolute', onHeading, true);
+    window.addEventListener('deviceorientation', onHeading, true);
+    compassOn = true;
+    $('compass').hidden = false;
+    $('showcompass').hidden = true;
+  };
+  var DOE = window.DeviceOrientationEvent;
+  if (DOE && typeof DOE.requestPermission === 'function') {
+    DOE.requestPermission().then(function (state) {
+      if (state === 'granted') go();
+      else setStatus('Compass permission denied.', 'error');
+    }).catch(function () { setStatus('Compass unavailable.', 'error'); });
+  } else if (DOE) {
+    go();
+  } else {
+    setStatus('This device has no compass.', 'error');
+  }
+}
+
 /* ------------------------------------------------------------- calendar */
 /* A static site cannot schedule a push notification: the Notification Triggers
    API was abandoned and Web Push needs a server holding VAPID keys. A recurring
@@ -241,11 +297,16 @@ function setStatus(text, tone) {
   if (tone) el.setAttribute('data-tone', tone); else el.removeAttribute('data-tone');
 }
 
+var FACING = { N: 'north', E: 'east', S: 'south', W: 'west' };
+
 function sideLabel(side, index) {
-  if (side.d === 'odd')  return 'Odd' + (side.a ? ' · ' + side.a : '');
-  if (side.d === 'even') return 'Even' + (side.a ? ' · ' + side.a : '');
-  if (side.d === 'both') return 'This block';
-  return 'Side ' + (index === 0 ? 'A' : 'B');
+  /* The house number is the reliable check -- you read it off the nearest door.
+     The compass is the parenthetical, for when no number is in sight. */
+  var facing = side.f ? ' (' + FACING[side.f] + ')' : '';
+  if (side.d === 'odd')  return 'Odd' + (side.a ? ' · ' + side.a : '') + facing;
+  if (side.d === 'even') return 'Even' + (side.a ? ' · ' + side.a : '') + facing;
+  if (side.d === 'both') return 'This block' + facing;
+  return 'Side ' + (index === 0 ? 'A' : 'B') + facing;
 }
 
 function renderSidePicker() {
@@ -329,6 +390,8 @@ function renderVerdict() {
   if (note) caveat.textContent = note;
 
   $('remind').hidden = !icsRule(side);
+  $('showcompass').hidden = compassOn || !side.f;
+  $('compass').hidden = !compassOn;
   $('street').textContent = current.n || 'This block';
   $('addr').textContent = describe(side);
 }
@@ -488,6 +551,7 @@ function showMap(lon, lat) {
 }
 
 $('remind').onclick = downloadIcs;
+$('showcompass').onclick = startCompass;
 
 $('report').onclick = function () {
   var side = current ? current.s[chosen] : null;
