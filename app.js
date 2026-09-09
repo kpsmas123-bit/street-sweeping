@@ -204,15 +204,23 @@ function setSheetY(y, animate) {
   syncMapToSheet();
 }
 
-/* Keep the block centred in whatever map area the sheet is not covering. */
+/* Keep the block centred in whatever map area the sheet is not covering.
+
+   Only once the map has a usable transform: the sheet is positioned as soon as
+   it has content, which is before the map finishes loading, and panning it then
+   throws "Invalid LngLat (NaN, NaN)". The load handler calls this again, so an
+   early skip costs nothing. */
 function syncMapToSheet() {
-  if (!map) return;
-  var visible = sheetEl().offsetHeight - sheetY;
-  var want = visible / 2;
+  if (!map || !map.isStyleLoaded()) return;
+  var want = (sheetEl().offsetHeight - sheetY) / 2;
   var delta = want - mapOffset;
   if (Math.abs(delta) < 1) return;
-  map.panBy([0, delta], { duration: 0 });
-  mapOffset = want;
+  try {
+    map.panBy([0, delta], { duration: 0 });
+    mapOffset = want;
+  } catch (err) {
+    /* Transform not ready yet; the load handler will re-apply. */
+  }
 }
 
 function snap(velocity) {
