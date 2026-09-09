@@ -204,14 +204,27 @@ function setSheetY(y, animate) {
   syncMapToSheet();
 }
 
-/* Keep the block centred in whatever map area the sheet is not covering.
+/* Does the map have a transform that can be panned? Not "is the style loaded":
+   painting the block calls setData first, which puts the geojson sources back
+   into a loading state, so isStyleLoaded() is false for the rest of the load
+   handler -- and gating on it silently skipped the pan, leaving the block
+   centred in the full-bleed map and therefore hidden behind the sheet. What
+   panBy actually needs is a sized canvas and a finite centre. */
+function mapReady() {
+  if (!map) return false;
+  try {
+    var c = map.getCenter();
+    var canvas = map.getCanvas();
+    return !!c && isFinite(c.lat) && isFinite(c.lng) &&
+           canvas.width > 0 && canvas.height > 0;
+  } catch (err) {
+    return false;
+  }
+}
 
-   Only once the map has a usable transform: the sheet is positioned as soon as
-   it has content, which is before the map finishes loading, and panning it then
-   throws "Invalid LngLat (NaN, NaN)". The load handler calls this again, so an
-   early skip costs nothing. */
+/* Keep the block centred in whatever map area the sheet is not covering. */
 function syncMapToSheet() {
-  if (!map || !map.isStyleLoaded()) return;
+  if (!mapReady()) return;
   var want = (sheetEl().offsetHeight - sheetY) / 2;
   var delta = want - mapOffset;
   if (Math.abs(delta) < 1) return;
