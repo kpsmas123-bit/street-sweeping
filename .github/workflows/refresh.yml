@@ -1,0 +1,49 @@
+name: Refresh sweeping data
+
+# Neither city edits this data often -- Oakland's has not changed since June 2021
+# -- but silently serving stale schedules is worse than a noisy pull request, so
+# this runs monthly and opens a PR whenever the normalized output actually diffs.
+on:
+  schedule:
+    - cron: '17 9 1 * *'      # 1st of the month, 09:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Unit tests
+        run: python -m unittest discover -s etl -t etl -v
+
+      - name: Fetch upstream
+        run: python etl/fetch.py
+
+      - name: Rebuild normalized data
+        run: python etl/build.py
+
+      - name: Open a PR if the data moved
+        uses: peter-evans/create-pull-request@v6
+        with:
+          add-paths: data
+          branch: data/refresh
+          delete-branch: true
+          commit-message: 'data: monthly refresh from Berkeley and Oakland GIS'
+          title: 'Data refresh: Berkeley and Oakland street sweeping'
+          body: |
+            Automated monthly re-run of the ETL.
+
+            A diff here means a city changed something upstream. Read it before
+            merging -- a schedule change is exactly the thing this repo exists to
+            notice, and it is also exactly the thing a bad upstream edit looks
+            like. Check `data/meta.json` for segment counts; a large swing in
+            `dropped_no_schedule` usually means a parse broke rather than a real
+            change.

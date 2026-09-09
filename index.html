@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1">
+<meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Sweeping">
+<title>Street Sweeping</title>
+<link rel="manifest" href="manifest.json">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="map" aria-hidden="true"></div>
+
+<!-- Status pill: locating / error / offline -->
+<div id="status" class="status" role="status" aria-live="polite" hidden></div>
+
+<!-- The answer. A bottom sheet, the way iOS does it. -->
+<section id="sheet" class="sheet" hidden aria-live="polite">
+  <div class="grabber" aria-hidden="true"></div>
+
+  <header class="sheet-head">
+    <h1 id="street">—</h1>
+    <p id="addr" class="addr"></p>
+  </header>
+
+  <!-- Side chooser. GPS cannot tell two parking lanes apart, so the user does. -->
+  <div id="sidepick" class="segmented" role="tablist" aria-label="Which side are you parked on?"></div>
+
+  <div class="verdict">
+    <p id="headline" class="headline">—</p>
+    <p id="detail" class="detail"></p>
+  </div>
+
+  <p id="caveat" class="caveat" hidden></p>
+
+  <button id="remind" class="primary" type="button" hidden>Add reminder to calendar</button>
+
+  <footer class="legal">
+    <strong>Posted signs control.</strong> This is advisory only — city data is
+    transcribed and can be out of date. Read the sign before you walk away.
+    <button id="report" class="link" type="button">Sign says something different?</button>
+    <p id="vintage" class="vintage"></p>
+  </footer>
+</section>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

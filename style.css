@@ -1,0 +1,141 @@
+/* Deference, clarity, depth. System font, system colours, one accent, and as
+   little chrome as the job allows. Sized for a phone held one-handed. */
+:root {
+  --bg: #f2f2f7;            /* systemGroupedBackground */
+  --surface: #ffffff;
+  --label: #000000;
+  --label-2: #3c3c4399;     /* secondaryLabel */
+  --label-3: #3c3c434d;
+  --separator: #3c3c4336;
+  --green: #34c759;
+  --orange: #ff9500;
+  --red: #ff3b30;
+  --blue: #007aff;
+  --gray: #8e8e93;
+  --fill: #78788033;
+  --radius: 14px;
+  --pad: 20px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #000000;
+    --surface: #1c1c1e;
+    --label: #ffffff;
+    --label-2: #ebebf599;
+    --label-3: #ebebf54d;
+    --separator: #54545899;
+    --fill: #7878805c;
+  }
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  margin: 0; height: 100%; overflow: hidden;
+  background: var(--bg); color: var(--label);
+  font: 400 17px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text",
+        "Segoe UI", Roboto, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+}
+
+#map { position: fixed; inset: 0 0 42vh 0; background: var(--bg); }
+
+/* --- status pill ---------------------------------------------------------- */
+.status {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  top: calc(env(safe-area-inset-top, 0px) + 12px);
+  z-index: 20; max-width: calc(100vw - 32px);
+  padding: 10px 18px; border-radius: 999px;
+  background: var(--surface); color: var(--label);
+  font-size: 15px; text-align: center;
+  box-shadow: 0 4px 16px #0000001f;
+}
+.status[data-tone="error"] { color: var(--red); }
+
+/* --- bottom sheet --------------------------------------------------------- */
+.sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+  max-height: 74vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  background: var(--surface);
+  border-radius: var(--radius) var(--radius) 0 0;
+  box-shadow: 0 -1px 0 var(--separator), 0 -12px 40px #00000024;
+  padding: 6px var(--pad) calc(env(safe-area-inset-bottom, 0px) + 20px);
+  animation: rise .28s cubic-bezier(.32, .72, 0, 1);
+}
+@keyframes rise { from { transform: translateY(24px); opacity: 0 } }
+@media (prefers-reduced-motion: reduce) { .sheet { animation: none } }
+
+.grabber {
+  width: 36px; height: 5px; margin: 6px auto 14px;
+  border-radius: 3px; background: var(--label-3);
+}
+
+.sheet-head h1 {
+  margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -.35px;
+}
+.addr { margin: 2px 0 0; font-size: 15px; color: var(--label-2); }
+
+/* --- segmented control (side picker) -------------------------------------- */
+.segmented {
+  display: flex; gap: 2px; margin: 16px 0 4px; padding: 2px;
+  background: var(--fill); border-radius: 9px;
+}
+.segmented:empty { display: none }
+.segmented button {
+  flex: 1 1 0; min-height: 44px;      /* 44pt: the smallest comfortable target */
+  border: 0; border-radius: 7px; padding: 6px 8px;
+  background: transparent; color: var(--label);
+  font: inherit; font-size: 15px; font-weight: 500;
+  cursor: pointer; transition: background .18s ease;
+}
+.segmented button[aria-selected="true"] {
+  background: var(--surface); font-weight: 600;
+  box-shadow: 0 1px 3px #0000002e;
+}
+.segmented .swatch {
+  display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+  margin-right: 6px; vertical-align: 1px;
+}
+
+/* --- the answer ----------------------------------------------------------- */
+.verdict { padding: 18px 0 4px; }
+.headline {
+  margin: 0; font-size: 32px; line-height: 1.12; font-weight: 700;
+  letter-spacing: -.7px;
+}
+.headline[data-tone="ok"]    { color: var(--green) }
+.headline[data-tone="soon"]  { color: var(--orange) }
+.headline[data-tone="now"]   { color: var(--red) }
+.headline[data-tone="muted"] { color: var(--label) }
+.detail { margin: 6px 0 0; font-size: 17px; color: var(--label-2); }
+
+.caveat {
+  margin: 14px 0 0; padding: 12px 14px; border-radius: 10px;
+  background: var(--fill); font-size: 14px; line-height: 1.45; color: var(--label);
+}
+
+/* --- legal ---------------------------------------------------------------- */
+.legal {
+  margin-top: 18px; padding-top: 14px; border-top: .5px solid var(--separator);
+  font-size: 13px; line-height: 1.45; color: var(--label-2);
+}
+.legal strong { color: var(--label); }
+.link {
+  display: block; margin-top: 10px; padding: 0; min-height: 32px;
+  border: 0; background: none; color: var(--blue);
+  font: inherit; font-size: 13px; text-align: left; cursor: pointer;
+}
+
+/* --- map bits ------------------------------------------------------------- */
+.maplibregl-ctrl-attrib { font-size: 10px }
+
+/* Primary action: full-width, 44pt minimum, the one filled control on screen. */
+.primary {
+  display: block; width: 100%; min-height: 50px; margin-top: 18px;
+  border: 0; border-radius: 12px; padding: 14px 16px;
+  background: var(--blue); color: #fff;
+  font: inherit; font-size: 17px; font-weight: 600; cursor: pointer;
+}
+.primary:active { opacity: .82 }
+.vintage { margin: 10px 0 0; font-size: 12px; color: var(--label-3); }
