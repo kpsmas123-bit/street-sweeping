@@ -38,8 +38,20 @@ ROW = re.compile(
     r'^\s*(\d+)\s+(.+?)\s+([NSEW])\s+(\d+)\s+(\d+)\s+'
     r'((?:1st|2nd|3rd|4th)\s+\w+)\s+(AM|PM)\s*(.*)$')
 
-# The PDF header's own rule.
+# The PDF header's rule, used only as a fallback.
+#
+# The rule is "odd on the north and east sides", but on 31 of 708 rows the
+# compass letter contradicts the row's own address range -- Grizzly Peak is
+# marked E (odd by the rule) while carrying 400-1530. The address range wins:
+# it is what the user can actually check, by reading the nearest house number,
+# and it keeps the side label consistent with the range shown beside it.
 SIDE_PARITY = {'N': 'odd', 'E': 'odd', 'S': 'even', 'W': 'even'}
+
+
+def side_of(compass, lo, hi):
+    if lo % 2 == hi % 2:              # range is unambiguously one parity
+        return 'odd' if lo % 2 else 'even'
+    return SIDE_PARITY[compass]       # mixed range: fall back to the stated rule
 HOURS = {'AM': ('09:00', '12:00'), 'PM': ('12:30', '15:30')}
 
 
@@ -60,7 +72,7 @@ def extract(path):
             'route': rte,
             'street': street.strip(),
             'key': normalize_street(street),
-            'side': SIDE_PARITY[side],
+            'side': side_of(side, int(lo), int(hi)),
             'compass': side,
             'lo': int(lo), 'hi': int(hi),
             'ordinal': ordinal, 'weekday': weekday,

@@ -597,7 +597,7 @@
    "opt_out": false,
    "ordinal": 1,
    "route": "51",
-   "side": "even",
+   "side": "odd",
    "start": "12:30",
    "street": "Acton",
    "weekday": 4
@@ -1157,7 +1157,7 @@
    "opt_out": false,
    "ordinal": 2,
    "route": "62",
-   "side": "odd",
+   "side": "even",
    "start": "09:00",
    "street": "Baker",
    "weekday": 5
@@ -1717,7 +1717,7 @@
    "opt_out": false,
    "ordinal": 2,
    "route": "32",
-   "side": "odd",
+   "side": "even",
    "start": "12:30",
    "street": "Bonita",
    "weekday": 2
@@ -2627,7 +2627,7 @@
    "opt_out": false,
    "ordinal": 4,
    "route": "44",
-   "side": "odd",
+   "side": "even",
    "start": "12:30",
    "street": "Channing",
    "weekday": 3
@@ -2767,7 +2767,7 @@
    "opt_out": false,
    "ordinal": 4,
    "route": "44",
-   "side": "odd",
+   "side": "even",
    "start": "09:00",
    "street": "Claremont Blvd",
    "weekday": 3
@@ -2829,20 +2829,6 @@
    "weekday": 1
   },
   {
-   "compass": "S",
-   "end": "12:00",
-   "hi": 2999,
-   "key": "CLAREMONT",
-   "lo": 2941,
-   "opt_out": false,
-   "ordinal": 4,
-   "route": "44",
-   "side": "even",
-   "start": "09:00",
-   "street": "Claremont Blvd",
-   "weekday": 3
-  },
-  {
    "compass": "N",
    "end": "12:00",
    "hi": 2999,
@@ -2855,6 +2841,20 @@
    "start": "09:00",
    "street": "Claremont Blvd",
    "weekday": 1
+  },
+  {
+   "compass": "S",
+   "end": "12:00",
+   "hi": 2999,
+   "key": "CLAREMONT",
+   "lo": 2941,
+   "opt_out": false,
+   "ordinal": 4,
+   "route": "44",
+   "side": "odd",
+   "start": "09:00",
+   "street": "Claremont Blvd",
+   "weekday": 3
   },
   {
    "compass": "S",
@@ -3501,20 +3501,6 @@
    "weekday": 5
   },
   {
-   "compass": "W",
-   "end": "12:00",
-   "hi": 69,
-   "key": "DOMINGO",
-   "lo": 1,
-   "opt_out": false,
-   "ordinal": 3,
-   "route": "63",
-   "side": "even",
-   "start": "09:00",
-   "street": "Domingo",
-   "weekday": 5
-  },
-  {
    "compass": "E",
    "end": "12:00",
    "hi": 69,
@@ -3531,6 +3517,20 @@
   {
    "compass": "W",
    "end": "12:00",
+   "hi": 69,
+   "key": "DOMINGO",
+   "lo": 1,
+   "opt_out": false,
+   "ordinal": 3,
+   "route": "63",
+   "side": "odd",
+   "start": "09:00",
+   "street": "Domingo",
+   "weekday": 5
+  },
+  {
+   "compass": "W",
+   "end": "12:00",
    "hi": 3349,
    "key": "DOVER",
    "lo": 3300,
@@ -3541,20 +3541,6 @@
    "start": "09:00",
    "street": "Dover",
    "weekday": 4
-  },
-  {
-   "compass": "S",
-   "end": "12:00",
-   "hi": 2499,
-   "key": "DOWLING",
-   "lo": 2401,
-   "opt_out": false,
-   "ordinal": 3,
-   "route": "23",
-   "side": "even",
-   "start": "09:00",
-   "street": "Dowling Place",
-   "weekday": 1
   },
   {
    "compass": "N",
@@ -3569,6 +3555,20 @@
    "start": "09:00",
    "street": "Dowling Place",
    "weekday": 2
+  },
+  {
+   "compass": "S",
+   "end": "12:00",
+   "hi": 2499,
+   "key": "DOWLING",
+   "lo": 2401,
+   "opt_out": false,
+   "ordinal": 3,
+   "route": "23",
+   "side": "odd",
+   "start": "09:00",
+   "street": "Dowling Place",
+   "weekday": 1
   },
   {
    "compass": "S",
@@ -3873,7 +3873,7 @@
    "opt_out": false,
    "ordinal": 1,
    "route": "41",
-   "side": "even",
+   "side": "odd",
    "start": "09:00",
    "street": "Ellis",
    "weekday": 3
@@ -3893,20 +3893,6 @@
    "weekday": 4
   },
   {
-   "compass": "W",
-   "end": "15:30",
-   "hi": 2499,
-   "key": "ELLSWORTH",
-   "lo": 2301,
-   "opt_out": false,
-   "ordinal": 3,
-   "route": "33",
-   "side": "even",
-   "start": "12:30",
-   "street": "Ellsworth",
-   "weekday": 2
-  },
-  {
    "compass": "E",
    "end": "15:30",
    "hi": 2499,
@@ -3919,6 +3905,20 @@
    "start": "12:30",
    "street": "Ellsworth",
    "weekday": 1
+  },
+  {
+   "compass": "W",
+   "end": "15:30",
+   "hi": 2499,
+   "key": "ELLSWORTH",
+   "lo": 2301,
+   "opt_out": false,
+   "ordinal": 3,
+   "route": "33",
+   "side": "odd",
+   "start": "12:30",
+   "street": "Ellsworth",
+   "weekday": 2
   },
   {
    "compass": "W",
@@ -4951,7 +4951,7 @@
    "opt_out": false,
    "ordinal": 4,
    "route": "64",
-   "side": "odd",
+   "side": "even",
    "start": "12:30",
    "street": "Grizzly Peak",
    "weekday": 5
@@ -4965,7 +4965,7 @@
    "opt_out": true,
    "ordinal": 4,
    "route": "54",
-   "side": "even",
+   "side": "odd",
    "start": "12:30",
    "street": "Grizzly Peak",
    "weekday": 4
@@ -5623,7 +5623,7 @@
    "opt_out": false,
    "ordinal": 1,
    "route": "61",
-   "side": "odd",
+   "side": "even",
    "start": "12:30",
    "street": "Hopkins",
    "weekday": 5
@@ -6771,7 +6771,7 @@
    "opt_out": false,
    "ordinal": 1,
    "route": "51",
-   "side": "odd",
+   "side": "even",
    "start": "09:00",
    "street": "M L King",
    "weekday": 4
@@ -6855,7 +6855,7 @@
    "opt_out": false,
    "ordinal": 2,
    "route": "22",
-   "side": "odd",
+   "side": "even",
    "start": "12:30",
    "street": "Neilson",
    "weekday": 1
@@ -6869,7 +6869,7 @@
    "opt_out": false,
    "ordinal": 1,
    "route": "61",
-   "side": "even",
+   "side": "odd",
    "start": "12:30",
    "street": "Neilson",
    "weekday": 5
@@ -7331,7 +7331,7 @@
    "opt_out": false,
    "ordinal": 1,
    "route": "61",
-   "side": "odd",
+   "side": "even",
    "start": "12:30",
    "street": "Page",
    "weekday": 5
@@ -7513,7 +7513,7 @@
    "opt_out": false,
    "ordinal": 3,
    "route": "63",
-   "side": "even",
+   "side": "odd",
    "start": "12:30",
    "street": "Peralta",
    "weekday": 5
@@ -8801,7 +8801,7 @@
    "opt_out": false,
    "ordinal": 4,
    "route": "44",
-   "side": "odd",
+   "side": "even",
    "start": "09:00",
    "street": "Tanglewood",
    "weekday": 3
@@ -9619,6 +9619,20 @@
    "weekday": 4
   },
   {
+   "compass": "N",
+   "end": "15:30",
+   "hi": 1398,
+   "key": "WATKINS",
+   "lo": 1300,
+   "opt_out": false,
+   "ordinal": 2,
+   "route": "22",
+   "side": "even",
+   "start": "12:30",
+   "street": "Watkins",
+   "weekday": 1
+  },
+  {
    "compass": "S",
    "end": "15:30",
    "hi": 1398,
@@ -9631,20 +9645,6 @@
    "start": "12:30",
    "street": "Watkins",
    "weekday": 5
-  },
-  {
-   "compass": "N",
-   "end": "15:30",
-   "hi": 1398,
-   "key": "WATKINS",
-   "lo": 1300,
-   "opt_out": false,
-   "ordinal": 2,
-   "route": "22",
-   "side": "odd",
-   "start": "12:30",
-   "street": "Watkins",
-   "weekday": 1
   },
   {
    "compass": "S",
