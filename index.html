@@ -9,8 +9,10 @@
 <meta name="apple-mobile-web-app-title" content="Sweeping">
 <title>Street Sweeping</title>
 <link rel="manifest" href="manifest.json">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.css">
-<link rel="stylesheet" href="style.css?v=14">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.css"
+      integrity="sha384-K282sW/zFjTkrjR/+yr1H+gCukuy4OEYrkXRybV88g7pk+kZZYpNV6SAV59NcgFg"
+      crossorigin="anonymous" referrerpolicy="no-referrer">
+<link rel="stylesheet" href="style.css?v=15">
 </head>
 <body>
 
@@ -63,6 +65,9 @@
       <span id="needle" class="needle"></span>
     </div>
     <p id="facing" class="facing" hidden></p>
+    <button id="aim" class="aim" type="button" hidden>
+      Point the phone the way your car faces, then tap here
+    </button>
 
     <div id="parked" class="parked" hidden></div>
   </section>
@@ -85,12 +90,17 @@
         <p id="note" class="note" hidden></p>
       </div>
 
+      <div id="overflow" class="overflow" hidden></div>
+
+      <div id="permit" class="permit" hidden></div>
+
       <div id="limits" class="limits" hidden></div>
 
       <div class="actions">
-        <button id="remind" class="btn btn--primary" type="button" hidden>Remind me</button>
+        <button id="timer" class="btn btn--primary" type="button" hidden>Timer</button>
         <button id="showmap" class="btn" type="button">Map</button>
         <button id="showcompass" class="btn" type="button" hidden>Compass</button>
+        <button id="remind" class="btn btn--quiet" type="button" hidden>Calendar</button>
       </div>
 
       <footer class="legal">
@@ -109,7 +119,11 @@
   <button id="closemap" class="btn btn--float" type="button">Done</button>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.js"></script>
-<script src="app.js?v=14"></script>
+<!-- Pinned with SRI: this script runs in the app's origin and can read the
+     stored parked-car location, so a compromised CDN must not be able to swap it. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.js"
+        integrity="sha384-KKgyz2mG25bKJ1O2PyqTJPlAF8Kw2BpDmsLTNBXslICOBvhTAyF5F0XhLWF2ZovY"
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="app.js?v=15"></script>
 </body>
 </html>

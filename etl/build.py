@@ -6,6 +6,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import normalize_berkeley as BK        # noqa: E402
+import rpp as RPP                      # noqa: E402
 import normalize_oakland as OAK        # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -206,6 +207,12 @@ def pack(seg):
            'g': seg['geometry']['coordinates']}
     if seg.get('one_way'):
         out['y'] = seg['one_way']
+    if seg.get('rpp'):
+        r = seg['rpp']['rule']
+        out['r'] = {'a': seg['rpp']['area'], 'm': r['limit_minutes'],
+                    'w': r['weekdays'], 's': r['start'], 'e': r['end']}
+        if r.get('note'):
+            out['r']['n'] = r['note']
     return out
 
 
@@ -240,6 +247,34 @@ def build_oakland():
     return segs
 
 
+def load_rpp():
+    """Permit-area rules, resolved at build time so the client never downloads
+    the 480 kB of polygons -- each block just carries its own rule."""
+    path = os.path.join(HERE, 'berkeley_rpp.json')
+    if not os.path.exists(path):
+        print('  no berkeley_rpp.json; run etl/rpp.py', file=sys.stderr)
+        return None, None
+    d = json.load(open(path))
+    index = [(a['letters'], tuple(a['bbox']), a['polygons']) for a in d['areas']]
+    return index, d['schedule']
+
+
+def attach_rpp(seg, index, rules):
+    """Tag a block with its permit area, using the midpoint of its geometry."""
+    if not index or not rules:
+        return False
+    pts = seg['geometry']['coordinates']
+    mid = pts[len(pts) // 2]
+    letters = RPP.area_for(mid[0], mid[1], index)
+    if not letters:
+        return False
+    rule = rules.get(letters)
+    if not rule:
+        return False
+    seg['rpp'] = {'area': letters, 'rule': rule}
+    return True
+
+
 def build_berkeley():
     l6 = json.load(open(os.path.join(RAW, 'berkeley_l6.json')))
     l7 = json.load(open(os.path.join(RAW, 'berkeley_l7.json')))
@@ -247,8 +282,10 @@ def build_berkeley():
     pdf_index = BK.load_pdf_index(pdf_rows)
     route_index = BK.build_route_index(l7)
 
+    rpp_index, rpp_rules = load_rpp()
     segs = []
     from_pdf = from_join = 0
+    rpp_hits = 0
     for f in l6:
         path = longest_path(f.get('geometry'))
         if not path:
@@ -260,10 +297,13 @@ def build_berkeley():
         rows = BK.match_pdf(attrs, pdf_index)
         if rows:
             from_pdf += 1
-            segs.append(add_compass(BK._segment(
+            seg = add_compass(BK._segment(
                 attrs, geom,
                 [BK.side_from_pdf(r, attrs) for r in rows],
-                [r['route'] for r in rows])))
+                [r['route'] for r in rows]))
+            if attach_rpp(seg, rpp_index, rpp_rules):
+                rpp_hits += 1
+            segs.append(seg)
             continue
 
         # 2. Otherwise fall back to the geometric route join, which gives the two
@@ -273,11 +313,15 @@ def build_berkeley():
             codes = BK.match_routes(path, route_index)
             if len(codes) == 2:
                 from_join += 1
-        segs.append(add_compass(BK.normalize(attrs, geom, codes)))
+        seg = add_compass(BK.normalize(attrs, geom, codes))
+        if attach_rpp(seg, rpp_index, rpp_rules):
+            rpp_hits += 1
+        segs.append(seg)
 
     print('  berkeley: %d centerlines -- %d from the city schedule table '
-          '(true odd/even), %d from the geometric route join (side unknown)'
-          % (len(segs), from_pdf, from_join), file=sys.stderr)
+          '(true odd/even), %d from the geometric route join (side unknown), '
+          '%d in a permit area'
+          % (len(segs), from_pdf, from_join, rpp_hits), file=sys.stderr)
     return segs
 
 
