@@ -182,6 +182,9 @@ function describe(side) {
   } else if (side.k === 'n') {
     var ords = (side.o || []).map(function (o) { return ORD[o]; }).join(' & ');
     when = ords + ' ' + days.join(' & ');
+  } else if (side.k === 'x') {
+    /* "No sweeping listed" followed by "Schedule unknown" contradicts itself. */
+    return 'The city records no sweeping on this block';
   } else {
     return 'Schedule unknown';
   }

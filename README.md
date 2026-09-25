@@ -119,6 +119,21 @@ wrong kerb, which it did.
 Tapping a card only highlights that side on the map. Nothing about the answer
 depends on the app guessing where the car is.
 
+## What ships
+
+A block is worth shipping if it has anything real to tell a driver — not only a
+sweeping schedule. A block in a permit zone, or one with a kerb regulation (a red
+kerb, a bus stop, a two-hour meter), matters even where it is never swept.
+Filtering on sweeping alone dropped 265 Berkeley blocks carrying a permit zone
+and 265 Oakland blocks carrying a kerb regulation — restrictions the driver is
+subject to regardless.
+
+| | blocks | permit zone | kerb regulation |
+|---|---|---|---|
+| Oakland | 10,658 | 897 | 2,107 |
+| Berkeley | 1,765 | 753 | — |
+| Emeryville | 414 | — | — |
+
 ## Permit zones
 
 The commonest citation after sweeping.

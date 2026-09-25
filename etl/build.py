@@ -229,12 +229,27 @@ def pack(seg):
     return out
 
 
-def has_any_schedule(seg):
-    """Worth shipping if any side either has a real schedule, or has something
-    specific to say about why it hasn't one. Dropping the latter would report
-    "no data" for a street that is definitely swept."""
-    return any(s['schedule']['kind'] in ('weekly', 'nth_weekday') or s.get('note')
-               for s in seg['sides'])
+def worth_shipping(seg):
+    """Anything with something real to tell a driver.
+
+    Not just sweeping: a block in a permit zone, or one with a kerb regulation
+    (a red kerb, a bus stop, a two-hour meter) matters even when it is never
+    swept. Filtering on sweeping alone dropped 233 Oakland blocks that carry a
+    permit zone and 265 that carry a kerb regulation -- restrictions the driver
+    is still subject to.
+
+    Also kept: a side with a note, which is a specific statement about why the
+    schedule is not known. Dropping those reports "no data" for a street that is
+    definitely swept.
+    """
+    if seg.get('rpp'):
+        return True
+    for side in seg['sides']:
+        if side['schedule']['kind'] in ('weekly', 'nth_weekday'):
+            return True
+        if side.get('note') or side.get('curb'):
+            return True
+    return False
 
 
 def load_oakland_rpp():
@@ -476,16 +491,23 @@ def main():
     for city, segs in (('oakland', build_oakland()),
                        ('berkeley', build_berkeley()),
                        ('emeryville', build_emeryville())):
-        active = [s for s in segs if has_any_schedule(s)]
+        active = [s for s in segs if worth_shipping(s)]
         payload = {'city': city, 'segments': [pack(s) for s in active]}
         path = os.path.join(DATA, '%s.json' % city)
         with open(path, 'w') as fh:
             json.dump(payload, fh, separators=(',', ':'))
         size = os.path.getsize(path)
         tile_keys[city] = write_tiles(city, payload['segments'])
-        summary[city] = {'segments': len(active),
-                         'dropped_no_schedule': len(segs) - len(active),
-                         'bytes': size}
+        # Count what actually ships, not what matched before filtering -- the
+        # build log used to report permit hits that were then dropped.
+        summary[city] = {
+            'segments': len(active),
+            'dropped_nothing_to_say': len(segs) - len(active),
+            'with_permit_zone': sum(1 for s in active if s.get('rpp')),
+            'with_kerb_regulation': sum(1 for s in active
+                                        for x in s['sides'] if x.get('curb')),
+            'bytes': size,
+        }
         print('  wrote %s: %d segments, %.2f MB'
               % (path, len(active), size / 1e6), file=sys.stderr)
     with open(os.path.join(DATA, 'meta.json'), 'w') as fh:
