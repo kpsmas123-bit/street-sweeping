@@ -1719,8 +1719,12 @@ function renderLimitRow() {
 
 /* --------------------------------------------------------------------- map */
 function baseStyle() {
-  /* No external tiles: the app's own street lines are the basemap. That keeps
-     it working with no signal and needs no tile-provider key. */
+  /* No external tiles: the app's own street lines are the basemap, so it works
+     with no signal and needs no provider key. Roads are drawn as a casing plus
+     a fill, which is what gives a map depth instead of leaving it a set of
+     scratches on black. Widths interpolate with zoom so it reads at any scale. */
+  var roadWidth = ['interpolate', ['linear'], ['zoom'], 13, 1.5, 16, 6, 19, 22];
+  var casingWidth = ['interpolate', ['linear'], ['zoom'], 13, 3, 16, 9, 19, 28];
   return {
     version: 8,
     sources: {
@@ -1728,17 +1732,31 @@ function baseStyle() {
       picked:  { type: 'geojson', data: { type: 'FeatureCollection', features: [] } }
     },
     layers: [
-      /* Match the app rather than the old light theme -- opening the map should
-         not feel like leaving the app. */
       { id: 'bg', type: 'background', paint: { 'background-color': '#0b0d10' } },
-      { id: 'streets', type: 'line', source: 'streets',
-        paint: { 'line-color': '#2b323c', 'line-width': 4 } },
-      { id: 'picked', type: 'line', source: 'picked',
+      { id: 'street-casing', type: 'line', source: 'streets',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': '#05070a', 'line-width': casingWidth } },
+      { id: 'street-fill', type: 'line', source: 'streets',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': '#1d222a', 'line-width': roadWidth } },
+
+      /* The block you are on, lit from underneath. */
+      { id: 'picked-glow', type: 'line', source: 'picked',
+        layout: { 'line-cap': 'round' },
         paint: {
           'line-color': ['get', 'color'],
-          'line-width': 6,
+          'line-width': ['interpolate', ['linear'], ['zoom'], 15, 8, 19, 26],
           'line-offset': ['get', 'offset'],
-          'line-opacity': ['case', ['get', 'active'], 1, 0.45]
+          'line-blur': 9,
+          'line-opacity': ['case', ['get', 'active'], 0.5, 0.16]
+        } },
+      { id: 'picked', type: 'line', source: 'picked',
+        layout: { 'line-cap': 'round' },
+        paint: {
+          'line-color': ['get', 'color'],
+          'line-width': ['interpolate', ['linear'], ['zoom'], 15, 2.5, 19, 7],
+          'line-offset': ['get', 'offset'],
+          'line-opacity': ['case', ['get', 'active'], 1, 0.5]
         } }
     ]
   };
@@ -1746,10 +1764,18 @@ function baseStyle() {
 
 function paintSides() {
   if (!map || !current) return;
-  var feats = current.s.map(function (side, i) {
+  var bearing = scene ? scene.bearing : 0;
+  var feats = current.s.slice(0, 2).map(function (side, i) {
+    var v = verdictFor(side, new Date());
+    /* Same colours the kerbs use on stage, so the two views agree at a glance. */
+    var colour = v.tone === 'now' ? '#ff453a'
+               : v.tone === 'soon' ? '#ff9f0a'
+               : v.tone === 'ok' ? '#32d74b' : '#6c7784';
+    var hand = handOfSide(side, bearing);
     return {
       type: 'Feature',
-      properties: { color: SIDE_COLOR[i], offset: i === 0 ? -5 : 5, active: i === chosen },
+      properties: { color: colour, offset: hand === 'left' ? -7 : 7,
+                    active: placed && i === chosen },
       geometry: { type: 'LineString', coordinates: current.g }
     };
   });
@@ -1757,12 +1783,14 @@ function paintSides() {
 }
 
 function paintContext(lon, lat) {
-  var pad = 0.004;
+  /* Wider net than the stage uses: at map zoom a few hundred metres of context
+     is the whole point, and these are already-loaded tile segments. */
+  var pad = 0.012;
   var near = segments.filter(function (s) {
     return s.g.some(function (p) {
       return Math.abs(p[0] - lon) < pad && Math.abs(p[1] - lat) < pad;
     });
-  }).slice(0, 400);
+  }).slice(0, 1200);
   map.getSource('streets').setData({
     type: 'FeatureCollection',
     features: near.map(function (s) {
@@ -2000,14 +2028,18 @@ function showMap() {
     container: 'map',
     style: baseStyle(),
     center: mid,
-    zoom: 17.6,
+    /* Wider than the stage on purpose: the stage answers "which kerb", the map
+       answers "is this really my block", and that needs the neighbourhood. */
+    zoom: 16.4,
     attributionControl: false
   });
   map.on('load', function () {
     map.resize();
     if (lastFix) {
       paintContext(lastFix[0], lastFix[1]);
-      new maplibregl.Marker({ color: '#0a84ff' }).setLngLat(lastFix).addTo(map);
+      var dot = document.createElement('div');
+      dot.className = 'here';
+      new maplibregl.Marker({ element: dot }).setLngLat(lastFix).addTo(map);
     }
     paintSides();
   });
