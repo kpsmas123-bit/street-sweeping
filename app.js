@@ -2027,12 +2027,37 @@ function fmtClock(d) {
 /* A meter, a permit zone, or a ParkMobile session is a second clock the city
    data knows nothing about. One tap sets it; whichever deadline lands first is
    the one the headline counts down to. */
+/* Is there a second clock on this block at all -- a meter, a permit zone, a
+   posted time limit? The limit chips are the answer to one, and on a plain
+   residential block they are three buttons asking a question nobody asked.
+   They stay reachable behind one quiet link, because a posted sign the data
+   does not have is still a reason to want a timer. */
+function limitContext() {
+  if (!current) return null;
+  if (paidHere()) return true;
+  if (rppStatus(current, new Date())) return true;
+  var side = (placed || suggestion) ? current.s[chosen] : null;
+  return !!(side && side.b && side.b.k === 'limited');
+}
+
+var limitsOpenFor = null;      /* the block the driver asked to see them on */
+
 function renderLimitRow() {
   var row = $('limits');
   var s = loadSession();
   var active = s && s.limitUntil && s.segId === current.i && s.limitUntil > Date.now();
   row.hidden = !placed;
   row.innerHTML = '';
+
+  if (!active && !limitContext() && limitsOpenFor !== current.i) {
+    var more = document.createElement('button');
+    more.type = 'button';
+    more.className = 'link';
+    more.textContent = 'Set a limit';
+    more.onclick = function () { limitsOpenFor = current.i; renderLimitRow(); };
+    row.appendChild(more);
+    return;
+  }
 
   if (active) {
     var chip = document.createElement('button');

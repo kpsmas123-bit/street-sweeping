@@ -26,6 +26,10 @@ Done and deployed:
   drives the kerb actually being swept.
 - Parked session, live countdown, manual meter/permit limits, walk-back
   directions, NFC entry point, native timer via Shortcuts.
+- The limit chips (1h/2h/4h) appear only where there is a second clock -- a
+  meter, a permit zone, a posted time limit. Elsewhere they are one quiet
+  "Set a limit" link, because a sign the data does not have is still a reason
+  to want a timer.
 - Paid parking, and with it the ParkMobile hand-off, which is now offered only
   where a city says there is something to pay: 2,299 Oakland kerbs with a meter
   standing on them (plus 449 blocks metered but kerb unknown) and 391 Berkeley
