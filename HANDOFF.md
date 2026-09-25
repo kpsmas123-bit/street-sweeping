@@ -26,9 +26,14 @@ Done and deployed:
   drives the kerb actually being swept.
 - Parked session, live countdown, manual meter/permit limits, walk-back
   directions, NFC entry point, native timer via Shortcuts.
-- The Timer is the reminder, and it appears for any deadline inside a day --
-  Clock will not take longer than that. The calendar export is a footer link,
-  not a button: the owner does not use a calendar and said so.
+- Two buttons, always: **Drop pin** and **Set timer**. Map and Compass are
+  quiet secondaries below them; the calendar export is a footer link, because
+  the owner does not use a calendar and said so.
+- Drop pin saves where you are now as the car's spot, and asks first if that
+  would overwrite a spot more than 180 m away. It refuses under `?at=`.
+- Set timer carries the deadline when there is one inside a day (Clock will not
+  take longer). Otherwise it opens the lengths and asks how long you are
+  staying, and the pick becomes the deadline.
 - The limit chips (1h/2h/4h) appear only where there is a second clock -- a
   meter, a permit zone, a posted time limit. Elsewhere they are one quiet
   "Set a limit" link, because a sign the data does not have is still a reason

@@ -258,6 +258,8 @@ html, body {
 .chip--pm { margin-left: auto; color: var(--blue); border-color: #0a84ff55; }
 
 .actions { display: flex; gap: 9px; margin-top: 16px; flex-wrap: wrap; }
+/* Map and Compass are for checking the app, not for parking the car. */
+.actions--minor { margin-top: 9px; gap: 7px; }
 .btn {
   flex: 1 1 auto; min-height: 46px; padding: 12px 16px;
   border: 0; border-radius: 13px; background: var(--surface-2); color: var(--label);

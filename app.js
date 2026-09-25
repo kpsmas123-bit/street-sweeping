@@ -348,7 +348,10 @@ function timerShortcutName() {
 }
 
 function minutesUntilDeadline() {
-  if (!current || !placed) return null;
+  /* A suggested side counts too: the headline is already counting that side
+     down, so the button beside it must carry the same number or the two
+     disagree on screen. */
+  if (!current || (!placed && !suggestion)) return null;
   var dl = deadlineFor(current.s[chosen], new Date());
   if (!dl || !dl.at) return null;
   var mins = Math.round((dl.at - new Date()) / 60000);
@@ -357,7 +360,21 @@ function minutesUntilDeadline() {
 
 function startNativeTimer() {
   var mins = minutesUntilDeadline();
-  if (!mins) { setStatus('Nothing to count down to yet.', 'error'); return; }
+  /* Nothing a Clock timer can hold: either no deadline at all, or a sweep days
+     out. Rather than refuse, open the lengths and ask how long they are
+     staying; that becomes the deadline and the button comes back carrying it. */
+  if (!mins || mins > TIMER_MAX_MINUTES) {
+    if (!placed) {
+      setStatus('Tap the kerb your car is on first.', 'error');
+      return;
+    }
+    limitsOpenFor = current.i;
+    renderLimitRow();
+    setStatus(mins
+      ? 'Next sweep is ' + countdownText(mins * 60000) + ' off. How long are you staying?'
+      : 'How long are you staying?', null);
+    return;
+  }
   /* Fire the shortcut with the minutes as input. If it is not installed iOS
      shows its own "shortcut not found" sheet, which is clearer than anything
      this page could say. */
@@ -390,8 +407,63 @@ function renderTimerButton() {
   if (!b) return;
   var mins = minutesUntilDeadline();
   var worthIt = mins && mins <= TIMER_MAX_MINUTES;
-  b.hidden = !worthIt;
-  if (worthIt) b.textContent = 'Timer · ' + countdownText(mins * 60000);
+  /* One of the two buttons this app is for, so it is always there. When there
+     is a deadline inside a day it carries it; when there is not, tapping it
+     asks how long rather than doing nothing. */
+  b.hidden = false;
+  b.textContent = worthIt ? 'Set timer · ' + countdownText(mins * 60000)
+                          : 'Set timer';
+}
+
+/* --------------------------------------------------------------- drop pin */
+/* Tapping the kerb already saves the spot, but only if you were stood at the
+   car when you tapped it. This is the explicit version: save where I am now as
+   the place I left the car.
+
+   It can destroy the one piece of information here that cannot be recovered,
+   so it asks first when the saved spot is nowhere near you -- which is exactly
+   the case where the tap would be a mistake. */
+function dropPin() {
+  if (simulated) {
+    setStatus('Simulated location — your saved spot is untouched.', 'error');
+    return;
+  }
+  if (!lastFix) { setStatus('No position yet.', 'error'); return; }
+
+  var prev = loadSession();
+  if (prev && prev.lat) {
+    var away = metresBetween(lastFix, [prev.lon, prev.lat]);
+    if (away > 180 && !window.confirm(
+        'Your car is saved on ' + (prev.street || 'another block') + ', ' +
+        (away > 1200 ? (away / 1000).toFixed(1) + ' km' : Math.round(away) + ' m') +
+        ' away.\n\nReplace it with where you are now?')) {
+      return;
+    }
+  }
+
+  saveSession({
+    segId: current ? current.i : null,
+    side: placed ? chosen : null,
+    at: Date.now(),
+    lon: lastFix[0], lat: lastFix[1],
+    street: current ? current.n : null, city: cityId
+  });
+  try { localStorage.setItem('parkedAt', String(Date.now())); } catch (e) {}
+  showParkedStamp();
+  renderRecall();
+  renderPinButton(true);
+  setStatus('Pin dropped' + (current ? ' on ' + current.n : '') + '.', null);
+  setTimeout(function () {
+    setStatus(null);
+    renderPinButton(false);
+  }, 2200);
+}
+
+function renderPinButton(justDropped) {
+  var b = $('droppin');
+  if (!b) return;
+  b.textContent = justDropped ? 'Pin dropped ✓' : 'Drop pin';
+  b.disabled = !!justDropped;
 }
 
 /* ------------------------------------------------------------- calendar */
@@ -1925,6 +1997,10 @@ function renderVerdict() {
           ? 'One schedule covers both sides of this block. Tap to confirm.'
           : 'Only one kerb is recorded here. Tap to confirm.');
     $('remind').hidden = true;
+    /* The two buttons stay, but with nothing chosen there is no deadline to
+       carry, so the timer goes back to its plain label. */
+    renderTimerButton();
+    renderPinButton(false);
     return;
   }
 
@@ -2509,6 +2585,7 @@ window.addEventListener('resize', function () {
 });
 
 $('timer').onclick = startNativeTimer;
+$('droppin').onclick = dropPin;
 $('timername').onclick = renameTimerShortcut;
 $('forget').onclick = forgetSpot;
 $('remind').onclick = downloadIcs;
