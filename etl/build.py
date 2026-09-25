@@ -358,6 +358,9 @@ def tile_key(lon, lat):
 
 
 def write_tiles(city, packed):
+    """Returns the list of cell keys written, so the manifest can tell the app
+    which cells exist -- otherwise every lookup in an overlapping city fires
+    404s for cells that were never going to be there."""
     out = os.path.join(DATA, 'tiles', city)
     if os.path.isdir(out):
         for name in os.listdir(out):
@@ -381,11 +384,13 @@ def write_tiles(city, packed):
     print('  %s tiles: %d files, median %.0f kB, max %.0f kB'
           % (city, len(sizes), sorted(sizes)[len(sizes) // 2] / 1000.0,
              max(sizes) / 1000.0), file=sys.stderr)
+    return sorted('%d_%d' % k for k in buckets)
 
 
 def main():
     os.makedirs(DATA, exist_ok=True)
     summary = {}
+    tile_keys = {}
     for city, segs in (('oakland', build_oakland()), ('berkeley', build_berkeley())):
         active = [s for s in segs if has_any_schedule(s)]
         payload = {'city': city, 'segments': [pack(s) for s in active]}
@@ -393,7 +398,7 @@ def main():
         with open(path, 'w') as fh:
             json.dump(payload, fh, separators=(',', ':'))
         size = os.path.getsize(path)
-        write_tiles(city, payload['segments'])
+        tile_keys[city] = write_tiles(city, payload['segments'])
         summary[city] = {'segments': len(active),
                          'dropped_no_schedule': len(segs) - len(active),
                          'bytes': size}
@@ -409,6 +414,7 @@ def main():
         entry['id'] = city
         entry['file'] = 'data/%s.json' % city
         entry['segments'] = summary.get(city, {}).get('segments', 0)
+        entry['tiles'] = tile_keys.get(city, [])
         manifest.append(entry)
     with open(os.path.join(DATA, 'cities.json'), 'w') as fh:
         json.dump({'cities': manifest, 'tile': TILE}, fh, indent=1, sort_keys=True)

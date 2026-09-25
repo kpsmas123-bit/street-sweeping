@@ -63,6 +63,7 @@ html, body {
 .kerb[data-active="false"] { opacity: .62; }
 .kerb[data-active="true"]  { opacity: 1; filter: url(#glow); }
 
+/* The car lands with a little weight rather than teleporting. */
 .car {
   transition: transform .7s cubic-bezier(.34, .9, .28, 1);
   transform: translate(180px, 250px);
@@ -81,17 +82,19 @@ html, body {
 
 /* Kerb labels sit in HTML so they stay upright and tappable. */
 /* Sit the labels above the car, not on top of it -- at 50% they covered it. */
+/* Kept clear of the middle of the view: the roadway occupies roughly 44-52% of
+   the width, and a wider card covered the very kerb it was labelling. */
 .kerb-label {
-  position: absolute; top: 20%; left: 3%;
-  max-width: 43%; padding: 11px 13px;
+  position: absolute; top: 18%; left: 2.5%;
+  max-width: 36%; padding: 10px 12px;
   border: 1.5px solid var(--hair); border-radius: 13px;
   background: #14171cdb; -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
   color: var(--label); font: inherit; font-size: 13px; line-height: 1.3;
   text-align: left; cursor: pointer;
 }
-.kerb-label--b { left: auto; right: 3%; }
+.kerb-label--b { left: auto; right: 2.5%; }
 .kerb-label[aria-pressed="true"] { border-color: currentColor; }
-.kerb-label .kl-side { display: block; font-size: 15px; font-weight: 650; }
+.kerb-label .kl-side { display: block; font-size: 14.5px; font-weight: 650; }
 .kerb-label .kl-meta { display: block; margin-top: 1px; color: var(--label-2); }
 .kerb-label .kl-state { display: block; margin-top: 5px; font-weight: 650; }
 .kerb-label[data-tone="ok"]    .kl-state { color: var(--green); }
@@ -259,4 +262,25 @@ html, body {
 @media (prefers-reduced-motion: reduce) {
   .car, .kerb, .needle { transition: none; }
   .car--placing { animation: none; }
+}
+
+/* --- the sweeper ----------------------------------------------------------- */
+.sweeper { pointer-events: none; }
+.sweep-body  { fill: #ffd60a; }
+.sweep-cab   { fill: #2b323c; }
+.sweep-brush { fill: #8e8e93; transform-origin: 0 8px; animation: spin .45s linear infinite; }
+.sweep-dust  { fill: #ffd60a; opacity: .18; animation: puff 1.1s ease-in-out infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes puff { 50% { opacity: .05; transform: scale(1.35); } }
+
+/* A quiet nod when you are in the clear -- the glow breathes rather than sits. */
+.kerb[data-tone="ok"][data-active="true"] { animation: breathe 3.4s ease-in-out infinite; }
+@keyframes breathe { 50% { opacity: .78; } }
+
+/* And an urgent one when you are not. */
+.kerb[data-tone="now"] { animation: alarm 1.15s ease-in-out infinite; }
+@keyframes alarm { 50% { opacity: .45; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .sweep-brush, .sweep-dust, .kerb { animation: none !important; }
 }

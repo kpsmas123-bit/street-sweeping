@@ -662,6 +662,14 @@ function tileName(lon, lat) {
 function fetchTile(city, tx, ty) {
   var key = city.id + '/' + tx + '_' + ty;
   if (tileCache[key]) return tileCache[key];
+  /* Skip cells the manifest says do not exist. Berkeley and Oakland overlap, so
+     every Berkeley lookup was also firing nine Oakland requests into cells that
+     were never generated -- correct behaviour, but a screenful of 404s and nine
+     pointless round trips on a phone. */
+  if (city.tiles && city.tiles.indexOf(tx + '_' + ty) === -1) {
+    tileCache[key] = Promise.resolve([]);
+    return tileCache[key];
+  }
   tileCache[key] = fetch('data/tiles/' + city.id + '/' + tx + '_' + ty + '.json')
     .then(function (r) { return r.ok ? r.json() : { segments: [] }; })
     .then(function (d) { return d.segments || []; })
@@ -1026,6 +1034,77 @@ function renderPermit() {
   }
 }
 
+/* --------------------------------------------------------------- the camera */
+/* The scene is static geometry; the camera is what moves. A fly-in that starts
+   high, banked and wide, then drops and squares up onto the block -- so arriving
+   at a spot feels like arriving somewhere, rather than a diagram appearing.
+   Runs once per block, and never when the system asks for reduced motion. */
+var flyRaf = null;
+
+function easeOutQuint(t) { return 1 - Math.pow(1 - t, 5); }
+function easeOutBack(t) {
+  var c = 1.3;
+  return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2);
+}
+
+function flyIn() {
+  var cam = $('camera');
+  var car = $('car');
+  if (!cam) return;
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    cam.removeAttribute('transform');
+    return;
+  }
+  if (flyRaf) cancelAnimationFrame(flyRaf);
+
+  var DUR = 1150;
+  var start = null;
+  var cx = VIEW_W / 2, cy = VIEW_H / 2;
+
+  /* Hold the kerb colours back until the camera has almost landed: the colour
+     is the answer, and it lands better as an arrival than as part of the swoop. */
+  $('kerbA').style.opacity = '0';
+  $('kerbB').style.opacity = '0';
+  if (car) car.style.opacity = '0';
+
+  function frame(ts) {
+    if (start === null) start = ts;
+    var t = Math.min(1, (ts - start) / DUR);
+    var e = easeOutQuint(t);
+
+    var scale = 2.35 - 1.35 * e;        /* swoop down from high above */
+    var bank = -14 * (1 - e);           /* and square up out of the bank */
+    var lift = -70 * (1 - e);
+    cam.setAttribute('transform',
+      'translate(' + cx + ' ' + (cy + lift) + ') ' +
+      'rotate(' + bank.toFixed(2) + ') ' +
+      'scale(' + scale.toFixed(3) + ') ' +
+      'translate(' + (-cx) + ' ' + (-cy) + ')');
+
+    if (t > 0.55 && car) {
+      var ct = Math.min(1, (t - 0.55) / 0.45);
+      car.style.opacity = String(ct);
+      car.style.setProperty('--drop', (1 - easeOutBack(ct)).toFixed(3));
+    }
+    if (t > 0.7) {
+      var kt = Math.min(1, (t - 0.7) / 0.3);
+      $('kerbA').style.opacity = String(kt);
+      $('kerbB').style.opacity = String(kt);
+    }
+
+    if (t < 1) {
+      flyRaf = requestAnimationFrame(frame);
+    } else {
+      cam.removeAttribute('transform');
+      $('kerbA').style.opacity = '';
+      $('kerbB').style.opacity = '';
+      if (car) { car.style.opacity = ''; car.style.removeProperty('--drop'); }
+      flyRaf = null;
+    }
+  }
+  flyRaf = requestAnimationFrame(frame);
+}
+
 /* ---------------------------------------------------------------- the scene */
 /* Drawn from the block's real geometry rather than a stock straight road: a
    curved block curves, a skew junction is skew, and the cross streets are the
@@ -1045,7 +1124,13 @@ function buildScene(lon, lat) {
   var mid = [lon, lat];
   var mx = MX_AT(mid[1]);
   var seg = segmentBearingNear(lon, lat) || { bearing: 0 };
-  var rot = -seg.bearing * Math.PI / 180;
+  /* Rotate BY the bearing, not by its negative.
+     A street of bearing b has direction (sin b, cos b) in east/north. Rotating a
+     vector by theta gives (sin(b-theta), cos(b-theta)), so theta = b is what
+     maps the street onto (0, 1) and stands it upright. Using -b left every
+     street skewed across the screen -- Parker St, which runs almost due east,
+     was drawn at 162 degrees. */
+  var rot = seg.bearing * Math.PI / 180;
   var cos = Math.cos(rot), sin = Math.sin(rot);
 
   function rotated(pt) {
@@ -1097,17 +1182,56 @@ function offsetPath(coords, metres, project) {
   return out;
 }
 
+/* The block is one centreline segment, and a fix near its end leaves half the
+   screen empty. Follow the street through the junctions either way so the road
+   runs off both edges of the view, the way a street actually does. */
+function continuedRoad(coords) {
+  var TOL = 0.00008;                 /* ~7 m: endpoints that are the same corner */
+  function near(a, b) {
+    return Math.abs(a[0] - b[0]) < TOL && Math.abs(a[1] - b[1]) < TOL;
+  }
+  var name = (current.n || '').toLowerCase();
+  var line = coords.slice();
+  var used = {};
+  used[current.i] = 1;
+
+  for (var pass = 0; pass < 4; pass++) {
+    var grew = false;
+    for (var i = 0; i < segments.length; i++) {
+      var seg = segments[i];
+      if (used[seg.i]) continue;
+      /* Same street only: continuing into whatever happens to touch the corner
+         would draw a road that bends into a different street. */
+      if ((seg.n || '').toLowerCase() !== name) continue;
+      var g = seg.g;
+      if (near(g[0], line[line.length - 1])) { line = line.concat(g.slice(1)); }
+      else if (near(g[g.length - 1], line[line.length - 1])) {
+        line = line.concat(g.slice(0, -1).reverse());
+      } else if (near(g[g.length - 1], line[0])) { line = g.slice(0, -1).concat(line); }
+      else if (near(g[0], line[0])) { line = g.slice(1).reverse().concat(line); }
+      else continue;
+      used[seg.i] = 1;
+      grew = true;
+    }
+    if (!grew) break;
+  }
+  return line;
+}
+
 function drawScene(lon, lat) {
   var sc = buildScene(lon, lat);
   var coords = current.g;
+  var through = continuedRoad(coords);
 
   /* Stroke widths are in SVG units, so they have to track the scale too or a
      zoomed-out block gets a motorway-wide road. */
   $('road').style.strokeWidth = (HALF_ROAD * 2 * sc.scale).toFixed(1);
   $('kerbA').style.strokeWidth = Math.max(3, sc.scale).toFixed(1);
   $('kerbB').style.strokeWidth = Math.max(3, sc.scale).toFixed(1);
-  $('road').setAttribute('d', pathOf(coords.map(sc.project)));
-  $('centerline').setAttribute('d', pathOf(coords.map(sc.project)));
+  /* Roadway and centreline run the full street; the coloured kerbs stay on this
+     block alone, because only this block's schedule is known. */
+  $('road').setAttribute('d', pathOf(through.map(sc.project)));
+  $('centerline').setAttribute('d', pathOf(through.map(sc.project)));
 
   /* Which hand of the line each side sits on, so the kerb is drawn where that
      side actually is rather than arbitrarily left or right. */
@@ -1150,6 +1274,84 @@ function drawContext(sc) {
     g.appendChild(path);
     drawn++;
   }
+}
+
+/* --------------------------------------------------------------- the sweeper */
+/* A sweeper drives the kerb that is actually being swept. It is the one piece of
+   decoration here that is also information: you can see which side is in trouble
+   without reading anything. It only appears when a side is genuinely active or
+   close to it, so it never implies a sweep that is not coming. */
+var sweepRaf = null;
+
+function runSweeper() {
+  var el = $('sweeper');
+  if (!el || !scene) return;
+  if (sweepRaf) { cancelAnimationFrame(sweepRaf); sweepRaf = null; }
+
+  var now = new Date();
+  var target = -1;
+  for (var i = 0; i < Math.min(2, current.s.length); i++) {
+    var tone = verdictFor(current.s[i], now).tone;
+    if (tone === 'now') { target = i; break; }
+  }
+  if (target < 0 || window.matchMedia &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    el.hidden = true;
+    return;
+  }
+
+  var hand = handOfSide(current.s[target], scene.bearing);
+  var lane = offsetPath(current.g, hand === 'left' ? -HALF_ROAD : HALF_ROAD,
+                        scene.project);
+  if (lane.length < 2) { el.hidden = true; return; }
+
+  /* Total length, so the sweeper moves at a steady speed rather than a steady
+     fraction -- a long block should take longer to sweep, which it does. */
+  var cum = [0];
+  for (var j = 1; j < lane.length; j++) {
+    cum.push(cum[j - 1] + Math.hypot(lane[j][0] - lane[j - 1][0],
+                                     lane[j][1] - lane[j - 1][1]));
+  }
+  /* Only sweep the stretch that is actually on screen: the block runs well past
+     the viewport and a sweeper trundling around off-screen is just a wasted
+     animation frame. */
+  var visible = lane.filter(function (p) {
+    return p[1] > -30 && p[1] < VIEW_H + 30;
+  });
+  if (visible.length >= 2) {
+    lane = visible;
+    cum = [0];
+    for (var v = 1; v < lane.length; v++) {
+      cum.push(cum[v - 1] + Math.hypot(lane[v][0] - lane[v - 1][0],
+                                       lane[v][1] - lane[v - 1][1]));
+    }
+  }
+  var total = cum[cum.length - 1];
+  if (!total) { el.hidden = true; return; }
+
+  el.hidden = false;
+  var SPEED = 34;                 /* SVG units per second */
+  var startTs = null;
+
+  function step(ts) {
+    if (startTs === null) startTs = ts;
+    var travelled = (((ts - startTs) / 1000) * SPEED) % (total + 60);
+    var d = Math.min(travelled, total);
+    var k = 1;
+    while (k < cum.length && cum[k] < d) k++;
+    var a = lane[k - 1], b = lane[Math.min(k, lane.length - 1)];
+    var segLen = cum[Math.min(k, cum.length - 1)] - cum[k - 1] || 1;
+    var f = (d - cum[k - 1]) / segLen;
+    var x = a[0] + (b[0] - a[0]) * f;
+    var y = a[1] + (b[1] - a[1]) * f;
+    var ang = Math.atan2(b[0] - a[0], -(b[1] - a[1])) * 180 / Math.PI;
+    var fade = travelled > total ? 0 : 1;
+    el.setAttribute('transform',
+      'translate(' + x.toFixed(1) + ' ' + y.toFixed(1) + ') rotate(' + ang.toFixed(1) + ')');
+    el.style.opacity = String(fade);
+    sweepRaf = requestAnimationFrame(step);
+  }
+  sweepRaf = requestAnimationFrame(step);
 }
 
 /* ------------------------------------------------------------------ stage */
@@ -1237,6 +1439,7 @@ function renderStage() {
   }
 
   moveCar();
+  runSweeper();
   renderVerdict();
 }
 
@@ -1725,6 +1928,7 @@ function onPosition(pos) {
             'city holidays will not be excluded.'
           : '');
       renderStage();
+      flyIn();
       showParkedStamp();
       renderRecall();
       startTicking();
@@ -1813,7 +2017,11 @@ if ('serviceWorker' in navigator) {
 }
 
 /* Manifest first: it decides which cities exist and which file to pull. */
-fetch('data/cities.json')
+/* Always revalidate the manifest. It decides which cities exist, which files to
+   fetch and which grid cells are real, so a stale copy quietly breaks all three
+   -- a cached one without the tile index sent nine 404s per lookup. It is under
+   a kilobyte, so there is nothing to save by caching it. */
+fetch('data/cities.json', { cache: 'no-cache' })
   .then(function (r) { return r.json(); })
   .then(function (m) { CITIES = m.cities || []; })
   .catch(function () { CITIES = []; })

@@ -17,7 +17,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.css"
       integrity="sha384-K282sW/zFjTkrjR/+yr1H+gCukuy4OEYrkXRybV88g7pk+kZZYpNV6SAV59NcgFg"
       crossorigin="anonymous" referrerpolicy="no-referrer">
-<link rel="stylesheet" href="style.css?v=18">
+<link rel="stylesheet" href="style.css?v=20">
 </head>
 <body>
 
@@ -40,12 +40,23 @@
         </filter>
       </defs>
 
-      <!-- Everything below is drawn from the block's real geometry at load. -->
+      <!-- Everything below is drawn from the block's real geometry at load.
+           The camera group is what flies; the geometry underneath never moves. -->
+      <g id="camera">
       <g id="context" class="context"></g>
       <path id="road" class="road" d=""></path>
       <path id="centerline" class="centerline" d=""></path>
       <path id="kerbA" class="kerb" d=""></path>
       <path id="kerbB" class="kerb" d=""></path>
+
+      <!-- A sweeper that actually drives the kerb being swept. Whimsy that also
+           answers the question: it shows you WHICH side is in trouble. -->
+      <g id="sweeper" class="sweeper" hidden>
+        <ellipse class="sweep-dust" cx="0" cy="9" rx="9" ry="5"/>
+        <rect class="sweep-body" x="-5.5" y="-10" width="11" height="20" rx="3"/>
+        <rect class="sweep-cab" x="-4" y="-7.5" width="8" height="6" rx="2"/>
+        <circle class="sweep-brush" cx="0" cy="8" r="3.6"/>
+      </g>
 
       <g id="car" class="car">
         <rect class="car-body" x="-5" y="-11" width="10" height="22" rx="3"/>
@@ -54,6 +65,7 @@
         <rect class="car-roof" x="-3.2" y="-1" width="6.4" height="3.4" rx="1.4"/>
       </g>
 
+      </g>
       <rect class="vignette" x="0" y="0" width="360" height="460" fill="url(#fade)"/>
     </svg>
 
@@ -126,6 +138,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.js"
         integrity="sha384-KKgyz2mG25bKJ1O2PyqTJPlAF8Kw2BpDmsLTNBXslICOBvhTAyF5F0XhLWF2ZovY"
         crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-<script src="app.js?v=18"></script>
+<script src="app.js?v=20"></script>
 </body>
 </html>
