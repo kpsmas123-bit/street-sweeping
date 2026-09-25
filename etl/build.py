@@ -11,6 +11,7 @@ import curb_oakland as CURB            # noqa: E402
 import rpp_oakland as OAKRPP           # noqa: E402
 import normalize_emeryville as EM      # noqa: E402
 import normalize_oakland as OAK        # noqa: E402
+import paid                            # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RAW = os.path.join(HERE, '..', 'raw')
@@ -207,6 +208,8 @@ def pack_side(side):
         out['b'] = {'k': side['curb']['kind'], 't': side['curb']['text']}
         if side['curb'].get('days'):
             out['b']['d'] = side['curb']['days']
+    if side.get('paid'):
+        out['p'] = 1                    # a meter stands on this kerb
     return out
 
 
@@ -226,6 +229,13 @@ def pack(seg):
             out['r']['e'] = r['end']
             if r.get('note'):
                 out['r']['n'] = r['note']
+    if seg.get('paid'):
+        q = seg['paid']
+        out['p'] = {'k': 'm' if q['kind'] == 'meter' else 'a'}
+        for key, short in (('name', 'n'), ('rate', 'r'), ('limit', 'l'),
+                           ('note', 'x')):
+            if q.get(key):
+                out['p'][short] = q[key]
     return out
 
 
@@ -240,11 +250,13 @@ def worth_shipping(seg):
 
     Also kept: a side with a note, which is a specific statement about why the
     schedule is not known. Dropping those reports "no data" for a street that is
-    definitely swept.
+    definitely swept -- and a metered block, where the thing you must do is pay.
     """
-    if seg.get('rpp'):
+    if seg.get('rpp') or seg.get('paid'):
         return True
     for side in seg['sides']:
+        if side.get('paid'):
+            return True
         if side['schedule']['kind'] in ('weekly', 'nth_weekday'):
             return True
         if side.get('note') or side.get('curb'):
@@ -260,6 +272,62 @@ def load_oakland_rpp():
     return json.load(open(path))['index']
 
 
+def load_paid():
+    """Meters and paid-parking districts, so the app only offers a way to pay
+    where there is something to pay. Absent file: no offer anywhere, which is
+    the safe direction to fail."""
+    path = os.path.join(HERE, 'paid.json')
+    if not os.path.exists(path):
+        print('  no paid.json; run etl/paid.py', file=sys.stderr)
+        return None
+    return json.load(open(path))
+
+
+def attach_meters(seg, grid):
+    """Tag the kerbs of this block that have a meter standing on them.
+
+    Attaching to the named side needs the compass letter, which is only set on
+    blocks straight enough to have one. Where it is missing the block is tagged
+    instead, which still answers "is there anything to pay here" without
+    claiming which kerb.
+    """
+    pts = seg['geometry']['coordinates']
+    if len(pts) < 2:
+        return 0
+    bearing = _bearing(pts) if _straightness(pts) >= 0.9 else None
+    facing, total = paid.meters_on_block(pts, grid, bearing)
+    if not total:
+        return 0
+    tagged = False
+    for side in seg['sides']:
+        if side.get('compass') and side['compass'] in facing:
+            side['paid'] = 'meter'
+            tagged = True
+    if not tagged:
+        seg['paid'] = {'kind': 'meter'}
+    return 1
+
+
+def attach_paid_area(seg, areas):
+    """Tag a block with the paid-parking district it sits in.
+
+    Unlike a meter point this is district-scale -- goBerkeley draws
+    neighbourhoods, some of them 1 km across, so a quiet side street inside
+    Downtown gets tagged too. The app says "paid parking area" rather than
+    "metered", because the polygon does not know about this kerb.
+    """
+    if not areas:
+        return False
+    pts = seg['geometry']['coordinates']
+    mid = pts[len(pts) // 2]
+    hit = paid.area_for(mid[0], mid[1], areas)
+    if not hit:
+        return False
+    seg['paid'] = {'kind': 'area', 'name': hit['n'], 'rate': hit['r'],
+                   'limit': hit['l'], 'note': hit['x']}
+    return True
+
+
 def load_oakland_curb():
     path = os.path.join(HERE, 'oakland_curb.json')
     if not os.path.exists(path):
@@ -272,8 +340,12 @@ def build_oakland():
     raw = json.load(open(os.path.join(RAW, 'oakland.json')))
     rpp_index = load_oakland_rpp()
     curb_index = load_oakland_curb()
+    paid_data = load_paid()
+    meter_grid = (paid.build_meter_index(paid_data['oakland']['meters'])
+                  if paid_data else None)
     curb_hits = 0
     rpp_hits = 0
+    meter_hits = 0
     segs = []
     for f in raw:
         path = longest_path(f.get('geometry'))
@@ -307,6 +379,11 @@ def build_oakland():
                     side['curb'] = {'kind': hit['k'], 'text': hit['t'],
                                     'days': hit['d']}
                     curb_hits += 1
+                    # The kerb inventory names meters the point layer has
+                    # since dropped (74 of them), and it is the kerb's own
+                    # description, so trust it about its own kerb.
+                    if 'Meter' in hit['t']:
+                        side['paid'] = 'meter'
         segs.append(seg)
     before = len(segs)
     segs = merge_major_street_pairs(segs)
@@ -314,9 +391,16 @@ def build_oakland():
     # before the merge, so re-check them together.
     for seg in segs:
         drop_inconsistent_compass(seg)
+    # Meters are attached after the merge, not before: a folded pair's halves
+    # each sit metres off the true centreline, which is enough to put a meter on
+    # the wrong kerb.
+    if meter_grid:
+        for seg in segs:
+            meter_hits += attach_meters(seg, meter_grid)
     print('  oakland: %d features -> %d segments (%d major-street pairs folded), '
-          '%d in a permit zone, %d kerbs described'
-          % (len(raw), len(segs), before - len(segs), rpp_hits, curb_hits),
+          '%d in a permit zone, %d kerbs described, %d blocks metered'
+          % (len(raw), len(segs), before - len(segs), rpp_hits, curb_hits,
+             meter_hits),
           file=sys.stderr)
     return segs
 
@@ -357,9 +441,12 @@ def build_berkeley():
     route_index = BK.build_route_index(l7)
 
     rpp_index, rpp_rules = load_rpp()
+    paid_data = load_paid()
+    areas = paid_data['berkeley']['areas'] if paid_data else None
     segs = []
     from_pdf = from_join = 0
     rpp_hits = 0
+    paid_hits = 0
     for f in l6:
         path = longest_path(f.get('geometry'))
         if not path:
@@ -377,6 +464,7 @@ def build_berkeley():
                 [r['route'] for r in rows]))
             if attach_rpp(seg, rpp_index, rpp_rules):
                 rpp_hits += 1
+            paid_hits += attach_paid_area(seg, areas)
             segs.append(seg)
             continue
 
@@ -390,12 +478,14 @@ def build_berkeley():
         seg = add_compass(BK.normalize(attrs, geom, codes))
         if attach_rpp(seg, rpp_index, rpp_rules):
             rpp_hits += 1
+        paid_hits += attach_paid_area(seg, areas)
         segs.append(seg)
 
     print('  berkeley: %d centerlines -- %d from the city schedule table '
           '(true odd/even), %d from the geometric route join (side unknown), '
-          '%d in a permit area'
-          % (len(segs), from_pdf, from_join, rpp_hits), file=sys.stderr)
+          '%d in a permit area, %d in a paid-parking area'
+          % (len(segs), from_pdf, from_join, rpp_hits, paid_hits),
+          file=sys.stderr)
     return segs
 
 
@@ -506,6 +596,9 @@ def main():
             'with_permit_zone': sum(1 for s in active if s.get('rpp')),
             'with_kerb_regulation': sum(1 for s in active
                                         for x in s['sides'] if x.get('curb')),
+            'with_paid_parking': sum(1 for s in active
+                                     if s.get('paid')
+                                     or any(x.get('paid') for x in s['sides'])),
             'bytes': size,
         }
         print('  wrote %s: %d segments, %.2f MB'

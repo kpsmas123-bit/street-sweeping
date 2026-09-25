@@ -1165,6 +1165,70 @@ function renderCurb() {
   }
 }
 
+/* Is paying for parking a thing on this kerb at all?
+
+   ParkMobile needs a zone number off the meter, so offering it where there is
+   no meter is noise -- and most of three cities is unmetered residential
+   street. Two kinds of evidence, and the wording differs because the certainty
+   does: a meter point stands on one kerb, whereas Berkeley's goBerkeley
+   polygons are neighbourhood-scale and only say "this is a paid district".
+
+   No evidence means no offer. That can be wrong the quiet way (Emeryville has
+   meters and publishes no layer for them), which is the direction to fail in:
+   anyone can open ParkMobile themselves, but an offer on a free residential
+   block is exactly the clutter being removed. */
+function paidHere() {
+  if (!current) return null;
+  var side = (placed || suggestion) ? current.s[chosen] : null;
+  /* A red kerb or a bus stop cannot be paid for. Say nothing. */
+  if (side && side.b && side.b.k === 'no_park') return null;
+  if (side && side.p) return { kind: 'meter' };
+  if (current.p && current.p.k === 'm') return { kind: 'meter' };
+  if (current.p && current.p.k === 'a') {
+    return { kind: 'area', name: current.p.n, rate: current.p.r,
+             limit: current.p.l, note: current.p.x };
+  }
+  return null;
+}
+
+function renderPaid() {
+  var el = $('paid');
+  if (!el) return;
+  var p = placed ? paidHere() : null;
+  if (!p) { el.hidden = true; return; }
+
+  el.hidden = false;
+  el.innerHTML = '';
+  var line = document.createElement('span');
+  line.className = 'paid-what';
+  if (p.kind === 'meter') {
+    line.textContent = 'Metered kerb — you have to pay to park here.';
+  } else {
+    var bits = [];
+    if (p.rate) bits.push(p.rate + '/hour');
+    if (p.limit) bits.push(p.limit.toLowerCase() + ' limit');
+    line.textContent = 'Paid parking area' + (p.name ? ' — ' + p.name : '') +
+      (bits.length ? ', ' + bits.join(', ') : '') + '.';
+  }
+  el.appendChild(line);
+
+  var hint = document.createElement('span');
+  hint.className = 'paid-hint';
+  /* The district polygon covers side streets that have no meter on them, so it
+     cannot promise this kerb is metered -- only the sign can. */
+  hint.textContent = p.kind === 'meter'
+    ? 'The zone number is on the meter.'
+    : 'Only if there is a meter or a sign on this block.';
+  el.appendChild(hint);
+
+  if (p.note) {
+    var n = document.createElement('span');
+    n.className = 'paid-hint';
+    n.textContent = p.note;
+    el.appendChild(n);
+  }
+}
+
 function renderPermit() {
   var el = $('permit');
   if (!el) return;
@@ -1856,6 +1920,7 @@ function renderVerdict() {
     $('confirm').hidden = true;
     $('permit').hidden = true;
     $('curb').hidden = true;
+    if ($('paid')) $('paid').hidden = true;
     $('prompt').textContent = current.s.length > 1
       ? 'Tap the kerb your car is on. Check the nearest house number.'
       : (current.s[0] && current.s[0].d === 'both'
@@ -1906,6 +1971,7 @@ function renderVerdict() {
   $('showcompass').hidden = compassOn || !current.s.some(function (x) { return x.f; });
   renderLimitRow();
   renderPermit();
+  renderPaid();
   renderCurb();
 }
 
@@ -1995,13 +2061,19 @@ function renderLimitRow() {
   /* ParkMobile has no public API, and automating a signed-in account would mean
      handling someone's credentials and breaking their terms. So this is a plain
      hand-off: open the app to pay, and the limit you set here counts the same
-     session down alongside the sweeping schedule. */
-  var pm = document.createElement('button');
-  pm.type = 'button';
-  pm.className = 'chip chip--pm';
-  pm.textContent = 'ParkMobile';
-  pm.onclick = openParkMobile;
-  row.appendChild(pm);
+     session down alongside the sweeping schedule.
+
+     Offered only where the city's own data says there is something to pay --
+     see paidHere(). It used to appear on every block in three cities, which on
+     a free residential street is an instruction to do nothing. */
+  if (paidHere()) {
+    var pm = document.createElement('button');
+    pm.type = 'button';
+    pm.className = 'chip chip--pm';
+    pm.textContent = 'Pay · ParkMobile';
+    pm.onclick = openParkMobile;
+    row.appendChild(pm);
+  }
 }
 
 /* --------------------------------------------------------------------- map */

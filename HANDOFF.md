@@ -25,7 +25,12 @@ Done and deployed:
 - Overhead scene drawn from real street geometry, camera fly-in, a sweeper that
   drives the kerb actually being swept.
 - Parked session, live countdown, manual meter/permit limits, walk-back
-  directions, NFC entry point, native timer via Shortcuts, ParkMobile hand-off.
+  directions, NFC entry point, native timer via Shortcuts.
+- Paid parking, and with it the ParkMobile hand-off, which is now offered only
+  where a city says there is something to pay: 2,299 Oakland kerbs with a meter
+  standing on them (plus 449 blocks metered but kerb unknown) and 391 Berkeley
+  blocks inside a goBerkeley paid area, with its rate and posted limit. Never
+  on a red kerb or a bus stop.
 - Spatial tiles (~30 kB per load instead of 2.6 MB), city manifest.
 - A dark map overlay for confirming the block.
 
@@ -86,6 +91,11 @@ Every one of these was a real bug that shipped:
 - Emeryville's bbox is **inside** Oakland's and they share border streets a
   metre apart, with different schedules. Nearest-block alone cannot separate
   them; the app surfaces both when the margin is inside GPS error.
+- Oakland's meter layer holds 8,107 rows and only 4,401 are real: the spares
+  sit at 0,0, so anything that does not filter on `POLE_STATU` and a sane
+  bounding box drags meters onto blocks at null island.
+- A meter point is on one kerb; a goBerkeley polygon is a neighbourhood up to
+  a kilometre across. They cannot be worded the same way.
 - Ship filters must not ask only "is it swept" — a permit zone or a kerb
   regulation on an unswept block is still a restriction.
 
@@ -94,6 +104,6 @@ Every one of these was a real bug that shipped:
     python3 etl/fetch.py && python3 etl/build.py
     python3 -m unittest discover -s etl -t etl
 
-`etl/rpp.py` and `etl/rpp_oakland.py` are run by hand, not in CI (the first
-needs poppler). Bump `?v=` in `index.html` and the asset list plus `CACHE` in
+`etl/rpp.py`, `etl/rpp_oakland.py` and `etl/paid.py` are run by hand, not in CI
+(the first needs poppler). Bump `?v=` in `index.html` and the asset list plus `CACHE` in
 `sw.js` on any deploy that changes the shell.

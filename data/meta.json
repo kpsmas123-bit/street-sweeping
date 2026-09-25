@@ -1,9 +1,10 @@
 {
  "berkeley": {
-  "bytes": 490744,
-  "dropped_nothing_to_say": 1336,
-  "segments": 1765,
+  "bytes": 548445,
+  "dropped_nothing_to_say": 1073,
+  "segments": 2028,
   "with_kerb_regulation": 0,
+  "with_paid_parking": 391,
   "with_permit_zone": 753
  },
  "emeryville": {
@@ -11,13 +12,15 @@
   "dropped_nothing_to_say": 0,
   "segments": 414,
   "with_kerb_regulation": 0,
+  "with_paid_parking": 0,
   "with_permit_zone": 0
  },
  "oakland": {
-  "bytes": 2832747,
-  "dropped_nothing_to_say": 12684,
-  "segments": 10658,
+  "bytes": 2939076,
+  "dropped_nothing_to_say": 12225,
+  "segments": 11117,
   "with_kerb_regulation": 2107,
+  "with_paid_parking": 1861,
   "with_permit_zone": 897
  }
 }
