@@ -375,12 +375,32 @@ function startNativeTimer() {
       : 'How long are you staying?', null);
     return;
   }
-  /* Fire the shortcut with the minutes as input. If it is not installed iOS
-     shows its own "shortcut not found" sheet, which is clearer than anything
-     this page could say. */
+  /* Fire the shortcut with the minutes as input. iOS Clock has no URL scheme of
+     its own -- no web page can start a native timer directly -- so Shortcuts is
+     the only route that reaches the real Clock app, and it needs the shortcut
+     to exist. If it does not, iOS shows its own "shortcut not found" sheet,
+     which is clearer than anything this page could say.
+
+     A page cannot tell whether that happened, so say once what to do about it
+     rather than leaving a button that looks broken. */
   window.location.href = 'shortcuts://x-callback-url/run-shortcut' +
     '?name=' + encodeURIComponent(timerShortcutName()) +
     '&input=text&text=' + encodeURIComponent(String(mins));
+  timerHint(mins);
+}
+
+function timerHint(mins) {
+  var seen = 0;
+  try { seen = +localStorage.getItem('timerHints') || 0; } catch (e) {}
+  if (seen >= 2) {
+    setStatus(countdownText(mins * 60000) + ' — opening Clock…', null);
+  } else {
+    setStatus('Opening Clock for ' + countdownText(mins * 60000) +
+      '. Nothing happened? Add Apple’s “' + timerShortcutName() +
+      '” shortcut once, from the Shortcuts app.', null);
+    try { localStorage.setItem('timerHints', String(seen + 1)); } catch (e) {}
+  }
+  setTimeout(function () { setStatus(null); }, 6000);
 }
 
 function renameTimerShortcut() {
@@ -416,6 +436,21 @@ function renderTimerButton() {
 }
 
 /* --------------------------------------------------------------- drop pin */
+/* maps:// opens the Maps app itself on iOS. If nothing claims the scheme -- a
+   desktop browser, or Android -- the page simply stays put, so fall back to the
+   https form shortly after. Leaving the page cancels the fallback, or Maps and
+   Safari would both open. */
+function openAppleMaps(query) {
+  var fellBack = false;
+  var t = setTimeout(function () {
+    if (!fellBack) window.location.href = 'https://maps.apple.com/' + query;
+  }, 700);
+  window.addEventListener('pagehide', function () {
+    fellBack = true;
+    clearTimeout(t);
+  }, { once: true });
+  window.location.href = 'maps://' + query;
+}
 /* Tapping the kerb already saves the spot, but only if you were stood at the
    car when you tapped it. This is the explicit version: save where I am now as
    the place I left the car.
@@ -457,6 +492,14 @@ function dropPin() {
     setStatus(null);
     renderPinButton(false);
   }, 2200);
+
+  /* And an actual pin in Apple Maps, which is where you will look for the car
+     -- q alongside ll is Apple's documented way to label a dropped pin rather
+     than run a search. The spot is saved before this, so it survives whether or
+     not Maps takes over. */
+  openAppleMaps('?ll=' + lastFix[1] + ',' + lastFix[0] +
+                '&q=' + encodeURIComponent(
+                  current ? 'Car on ' + current.n : 'Parked car'));
 }
 
 function renderPinButton(justDropped) {
@@ -1096,19 +1139,7 @@ function renderRecall() {
   go.className = 'chip chip--on';
   go.textContent = 'Walk back';
   go.onclick = function () {
-    /* maps:// opens the Maps app directly on iOS. If nothing claims the scheme
-       (a desktop browser, or Android) the page stays put, so fall back to the
-       https form shortly after. */
-    var q = '?daddr=' + s.lat + ',' + s.lon + '&dirflg=w';
-    var fellBack = false;
-    var t = setTimeout(function () {
-      if (!fellBack) window.location.href = 'https://maps.apple.com/' + q;
-    }, 700);
-    window.addEventListener('pagehide', function () {
-      fellBack = true;
-      clearTimeout(t);
-    }, { once: true });
-    window.location.href = 'maps://' + q;
+    openAppleMaps('?daddr=' + s.lat + ',' + s.lon + '&dirflg=w');
   };
   el.appendChild(text);
   el.appendChild(go);

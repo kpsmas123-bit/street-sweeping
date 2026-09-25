@@ -29,11 +29,17 @@ Done and deployed:
 - Two buttons, always: **Drop pin** and **Set timer**. Map and Compass are
   quiet secondaries below them; the calendar export is a footer link, because
   the owner does not use a calendar and said so.
-- Drop pin saves where you are now as the car's spot, and asks first if that
-  would overwrite a spot more than 180 m away. It refuses under `?at=`.
+- Drop pin saves where you are now as the car's spot **and drops a labelled pin
+  in Apple Maps** (`maps://?ll=<lat>,<lon>&q=<label>` -- `q` beside `ll` is
+  Apple's documented way to label a pin rather than run a search). It asks
+  first if that would overwrite a spot more than 180 m away, and refuses under
+  `?at=`. The save happens before Maps is opened, so it survives either way.
 - Set timer carries the deadline when there is one inside a day (Clock will not
   take longer). Otherwise it opens the lengths and asks how long you are
-  staying, and the pick becomes the deadline.
+  staying, and the pick becomes the deadline. **iOS Clock has no URL scheme**,
+  so Shortcuts is the only route to the real Clock app and the "Set Timer"
+  shortcut has to exist on the device; the page cannot detect that it does not,
+  so the first two taps say what to do if nothing happens.
 - The limit chips (1h/2h/4h) appear only where there is a second clock -- a
   meter, a permit zone, a posted time limit. Elsewhere they are one quiet
   "Set a limit" link, because a sign the data does not have is still a reason
