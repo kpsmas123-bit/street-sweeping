@@ -7,6 +7,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import normalize_berkeley as BK        # noqa: E402
 import rpp as RPP                      # noqa: E402
+import curb_oakland as CURB            # noqa: E402
 import rpp_oakland as OAKRPP           # noqa: E402
 import normalize_emeryville as EM      # noqa: E402
 import normalize_oakland as OAK        # noqa: E402
@@ -202,6 +203,10 @@ def pack_side(side):
         out['f'] = side['compass']      # facing: N/E/S/W
     if side.get('note'):
         out['x'] = side['note']         # what the city would not commit to
+    if side.get('curb'):
+        out['b'] = {'k': side['curb']['kind'], 't': side['curb']['text']}
+        if side['curb'].get('days'):
+            out['b']['d'] = side['curb']['days']
     return out
 
 
@@ -240,9 +245,19 @@ def load_oakland_rpp():
     return json.load(open(path))['index']
 
 
+def load_oakland_curb():
+    path = os.path.join(HERE, 'oakland_curb.json')
+    if not os.path.exists(path):
+        print('  no oakland_curb.json; run etl/curb_oakland.py', file=sys.stderr)
+        return None
+    return json.load(open(path))['index']
+
+
 def build_oakland():
     raw = json.load(open(os.path.join(RAW, 'oakland.json')))
     rpp_index = load_oakland_rpp()
+    curb_index = load_oakland_curb()
+    curb_hits = 0
     rpp_hits = 0
     segs = []
     for f in raw:
@@ -264,7 +279,20 @@ def build_oakland():
                 # Zone only: Oakland publishes no hours or limit for these.
                 seg['rpp'] = {'area': zone, 'rule': None}
                 rpp_hits += 1
-        segs.append(add_compass(seg))
+        seg = add_compass(seg)
+        if curb_index:
+            pts = seg['geometry']['coordinates']
+            mid = pts[len(pts) // 2]
+            for side in seg['sides']:
+                # Needs the compass tag, which add_compass has just set: a
+                # blockface sits metres from its opposite number, so matching on
+                # distance alone would put a red kerb on the wrong side.
+                hit = CURB.curb_for(mid[0], mid[1], side.get('compass'), curb_index)
+                if hit:
+                    side['curb'] = {'kind': hit['k'], 'text': hit['t'],
+                                    'days': hit['d']}
+                    curb_hits += 1
+        segs.append(seg)
     before = len(segs)
     segs = merge_major_street_pairs(segs)
     # A folded pair's two sides came from two separate features, each tagged
@@ -272,8 +300,9 @@ def build_oakland():
     for seg in segs:
         drop_inconsistent_compass(seg)
     print('  oakland: %d features -> %d segments (%d major-street pairs folded), '
-          '%d in a permit zone'
-          % (len(raw), len(segs), before - len(segs), rpp_hits), file=sys.stderr)
+          '%d in a permit zone, %d kerbs described'
+          % (len(raw), len(segs), before - len(segs), rpp_hits, curb_hits),
+          file=sys.stderr)
     return segs
 
 

@@ -160,6 +160,14 @@ html, body {
 }
 .recall span { flex: 1 1 auto; }
 
+.rival {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 14px; padding: 12px 14px; border-radius: 13px;
+  background: #ff9f0a1a; box-shadow: inset 0 0 0 1.5px var(--amber);
+  font-size: 13.5px; line-height: 1.45; color: var(--label);
+}
+.rival span { flex: 1 1 auto; }
+
 .detail h1 { margin: 0; font-size: 26px; font-weight: 680; letter-spacing: -.5px; }
 .prompt { margin: 4px 0 0; font-size: 15px; color: var(--label-2); }
 
@@ -167,6 +175,19 @@ html, body {
 .car--guess .car-body  { fill: none; stroke: #eef1f5; stroke-width: 2.5; stroke-dasharray: 5 4; }
 .car--guess .car-glass { fill: #39424e; }
 .car--guess .car-roof  { fill: #5b6675; }
+
+.curb {
+  display: flex; flex-direction: column; gap: 3px;
+  margin-top: 14px; padding: 12px 14px; border-radius: 12px;
+  background: var(--surface-2); font-size: 14px; line-height: 1.4;
+}
+/* A kerb you cannot park at outranks any schedule below it. */
+.curb[data-kind="no_park"] {
+  background: #ff453a1a; box-shadow: inset 0 0 0 1.5px var(--red);
+}
+.curb[data-kind="no_park"] .curb-what { color: var(--red); font-weight: 650; }
+.curb-what { color: var(--label); }
+.curb-when { font-size: 12.5px; color: var(--label-3); }
 
 .confirm {
   margin-top: 14px; padding: 13px 14px;

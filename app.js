@@ -90,11 +90,21 @@ function isHoliday(d) {
 /* The holiday tables are hand-maintained from the cities' own pages and stop at
    a fixed date. Past that they silently stop suppressing sweeps, which looks
    exactly like a city that stopped taking holidays -- so say it out loud. */
-function holidayCoverageEndsSoon() {
-  if (!holidays || !holidays.dates || !holidays.dates.length) return false;
+function holidayWarning() {
+  /* No table at all is the worse case and used to be the silent one: isHoliday
+     returned false for every date, no sweep was ever suppressed, and the
+     coverage warning -- which only fired on a table that was running out --
+     stayed quiet precisely for the city that had none. */
+  if (!holidays || !holidays.dates || !holidays.dates.length) {
+    return ' No holiday dates for this city yet, so sweeps on public holidays ' +
+           'are not excluded here.';
+  }
   var last = holidays.dates[holidays.dates.length - 1];
-  var lastDate = new Date(last + 'T12:00:00');
-  return (lastDate - new Date()) < 1000 * 60 * 60 * 24 * 60;
+  if ((new Date(last + 'T12:00:00') - new Date()) < 1000 * 60 * 60 * 24 * 60) {
+    return ' Holiday dates in this app run out soon — after that, sweeps on ' +
+           'city holidays will not be excluded.';
+  }
+  return '';
 }
 
 function nextSweep(side, from) {
@@ -446,6 +456,15 @@ function buildIcs(seg, side, deadline) {
     return d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) +
            'T' + hm[0] + hm[1] + '00';
   }
+  /* For an overnight window the event ends the next morning. Stamping both ends
+     with the same date produced a DTEND 15 hours before DTSTART, which RFC 5545
+     forbids -- clients reject or clamp the event, taking the alarm with it. That
+     is 180 of Emeryville's 326 exportable sides. */
+  var endDay = first;
+  if (side.t && minutes(side.t[1]) < minutes(side.t[0])) {
+    endDay = new Date(first);
+    endDay.setDate(endDay.getDate() + 1);
+  }
   var label = (seg.n || 'Street') + ' sweeping (' +
               (side.d === 'odd' || side.d === 'even' ? side.d + ' side' : 'your side') + ')';
   var lines = [
@@ -454,7 +473,7 @@ function buildIcs(seg, side, deadline) {
     'UID:' + seg.i + '-' + side.d + '@street-sweeping',
     'DTSTAMP:' + stamp(new Date(), ['00', '00']) + 'Z',
     'DTSTART;TZID=America/Los_Angeles:' + stamp(first, start),
-    'DTEND;TZID=America/Los_Angeles:' + stamp(first, end),
+    'DTEND;TZID=America/Los_Angeles:' + stamp(endDay, end),
     'RRULE:' + rule,
     'SUMMARY:Move car — ' + label,
     'DESCRIPTION:Advisory only. Posted signs control.' +
@@ -616,7 +635,17 @@ function deadlineFor(side, now) {
   var out = null;
   var r = evaluate(side, now);
   if (r.state === 'active') {
-    out = { at: atTime(now, side.t[1]), why: 'sweeping now' };
+    var endAt = atTime(now, side.t[1]);
+    /* A 20:00-05:00 window that started this evening ends tomorrow morning.
+       Keeping now's date put the deadline 15-19 hours in the PAST, which
+       suppressed the countdown, hid the timer button, silently dropped any
+       manual limit from the headline, and printed "Sweeping until 5 AM today"
+       at nine in the evening. */
+    if (spansMidnight(side) &&
+        (now.getHours() * 60 + now.getMinutes()) >= minutes(side.t[0])) {
+      endAt.setDate(endAt.getDate() + 1);
+    }
+    out = { at: endAt, why: 'sweeping now' };
   } else if (r.state === 'today') {
     out = { at: atTime(now, side.t[0]), why: 'sweeping starts' };
   } else if (r.next && side.t) {
@@ -1061,6 +1090,78 @@ function weekdayRange(w) {
     : sorted.map(function (d) { return names[d]; }).join(', ');
 }
 
+/* What the kerb itself is, where Oakland's downtown inventory covers it.
+   Sweeping says when you must move; this says whether you could park here at
+   all -- a bus stop or a red kerb outranks any schedule, so it is shown above
+   the verdict rather than beside it. */
+/* Two cities claiming the same kerb. Offer the other rather than hiding it. */
+function renderRival() {
+  var el = $('rival');
+  if (!el) return;
+  if (!rival) { el.hidden = true; return; }
+  el.hidden = false;
+  el.innerHTML = '';
+  var t = document.createElement('span');
+  t.textContent = 'This block is on the ' + rival.city.name + ' line. ' +
+    rival.city.name + ' records it too, with its own schedule — ' +
+    'the posted sign is the tie-break.';
+  var b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'chip chip--on';
+  b.textContent = 'Use ' + rival.city.name;
+  b.onclick = function () { switchToRival(); };
+  el.appendChild(t);
+  el.appendChild(b);
+}
+
+function switchToRival() {
+  if (!rival) return;
+  var here = { city: cityForId(cityId), segment: current, segs: segments };
+  var other = rival;
+  cityId = other.city.id;
+  segments = other.segs;
+  current = other.segment;
+  holidays = holidaysAll ? holidaysAll[other.city.id] : null;
+  placed = false;
+  suggestion = null;
+  rival = here.city ? here : null;
+  $('vintage').textContent = other.city.vintage +
+    ' Schedules can change without the data changing.' + holidayWarning();
+  renderStage();
+  renderRival();
+}
+
+function cityForId(id) {
+  for (var i = 0; i < CITIES.length; i++) {
+    if (CITIES[i].id === id) return CITIES[i];
+  }
+  return null;
+}
+
+function renderCurb() {
+  var el = $('curb');
+  if (!el) return;
+  var side = placed || suggestion ? current.s[chosen] : null;
+  var c = side && side.b;
+  if (!c) { el.hidden = true; return; }
+
+  el.hidden = false;
+  el.setAttribute('data-kind', c.k);
+  el.innerHTML = '';
+  var t = document.createElement('span');
+  t.className = 'curb-what';
+  t.textContent = c.k === 'no_park' ? 'No parking here — ' + c.t : c.t;
+  el.appendChild(t);
+  if (c.d) {
+    var d = document.createElement('span');
+    d.className = 'curb-when';
+    /* The city publishes the enforced DAYS but stores the hours as a degenerate
+       1900 timestamp, so the hours genuinely are not known. */
+    d.textContent = c.d + ' · hours not published';
+    el.appendChild(d);
+  }
+}
+
 function renderPermit() {
   var el = $('permit');
   if (!el) return;
@@ -1352,10 +1453,9 @@ function drawScene(lon, lat) {
   var drawFor = current.s.length === 1 && current.s[0].d === 'both'
     ? [current.s[0], current.s[0]]
     : current.s.slice(0, 2);
+  var hands = current.s.length === 1 ? ['left', 'right'] : handsForSides(current.s);
   drawFor.forEach(function (side, i) {
-    var hand = current.s.length === 1
-      ? (i === 0 ? 'left' : 'right')
-      : handOfSide(side, sc.bearing);
+    var hand = hands[i];
     var metres = hand === 'left' ? -HALF_ROAD : HALF_ROAD;
     var el = $(i === 0 ? 'kerbA' : 'kerbB');
     el.setAttribute('d', pathOf(offsetPath(coords, metres, sc.project)));
@@ -1378,13 +1478,42 @@ function drawScene(lon, lat) {
   return sc;
 }
 
+/* The block's overall bearing, first vertex to last -- the SAME measure the ETL
+   used when it derived each side's compass tag.
+
+   This has to match. handOfSide compared the tag against the bearing of the
+   sub-segment nearest the fix, and on a block that bends across a quadrant
+   boundary neither tag matches, so the fallback put BOTH kerbs on the right.
+   One kerb then paints over the other, the opposite kerb is left bare, and the
+   car goes to that single kerb whichever label is tapped -- the wrong-kerb
+   failure again, arrived at geometrically. 378 Oakland and 25 Berkeley blocks
+   have at least one sub-segment where that fires. */
+function blockBearing() {
+  var g = current.g;
+  var a = g[0], b = g[g.length - 1];
+  var mx = MX_AT((a[1] + b[1]) / 2);
+  return (Math.atan2((b[0] - a[0]) * mx, (b[1] - a[1]) * MY) * 180 / Math.PI + 360) % 360;
+}
+
 /* 'left' or 'right' of the digitisation direction, from the side's compass tag.
-   Without a tag the two sides are simply drawn on opposite hands. */
+   Abstains rather than guessing, and the caller places the two sides on
+   opposite hands by index -- which is always better than both on one. */
 function handOfSide(side, bearing) {
-  if (side.f) {
-    return side.f === cardinalOf(bearing - 90) ? 'left' : 'right';
+  var b = blockBearing();
+  if (side && side.f) {
+    if (side.f === cardinalOf(b - 90)) return 'left';
+    if (side.f === cardinalOf(b + 90)) return 'right';
   }
-  return current.s.indexOf(side) === 0 ? 'left' : 'right';
+  return null;
+}
+
+/* Hands for the two drawn sides, guaranteed opposite. */
+function handsForSides(sides) {
+  var a = handOfSide(sides[0]);
+  var b = sides.length > 1 ? handOfSide(sides[1]) : null;
+  if (a && (!b || b !== a)) return [a, a === 'left' ? 'right' : 'left'];
+  if (b && !a) return [b === 'left' ? 'right' : 'left', b];
+  return ['left', 'right'];          /* no usable tags: opposite by index */
 }
 
 /* The streets actually around you, so the block reads as a place. */
@@ -1432,7 +1561,9 @@ function runSweeper() {
     return;
   }
 
-  var hand = handOfSide(current.s[target], scene.bearing);
+  var swHands = current.s.length === 1
+    ? ['left', 'right'] : handsForSides(current.s);
+  var hand = swHands[Math.min(target, 1)];
   var lane = offsetPath(current.g, hand === 'left' ? -HALF_ROAD : HALF_ROAD,
                         scene.project);
   if (lane.length < 2) { el.hidden = true; return; }
@@ -1502,6 +1633,7 @@ var rememberedSide = null;  /* where this block was answered before */
 var lastFixDetail = null;
 var shortcutHint = null;    /* heading/accuracy handed in by an iOS Shortcut */
 var simulated = false;      /* ?at= override in play: never overwrite a real spot */
+var rival = null;           /* an equally-close block in a different city */
 
 
 function toneOf(side, now) { return verdictFor(side, now).tone; }
@@ -1559,6 +1691,7 @@ function renderStage() {
        verdict, so show the schedule itself -- for Emeryville that is the whole
        of what the city published. */
     if (!meta.length) meta.push(describe(side));
+    if (side.b && side.b.k === 'no_park') meta.unshift('No parking');
     label.innerHTML =
       '<span class="kl-side">' + esc(who) + '</span>' +
       (meta.length ? '<span class="kl-meta">' + esc(meta.join(' · ')) + '</span>' : '') +
@@ -1629,9 +1762,11 @@ function moveCar() {
     /* Put the car where the driver actually is along the block, pushed out to
        the chosen kerb -- not at a fixed spot on a stock road. */
     var here = scene.project(lastFix);
+    var carHands = current.s.length === 1
+      ? ['left', 'right'] : handsForSides(current.s);
     var lane = onKerb
       ? offsetPath(current.g,
-          handOfSide(current.s[Math.min(chosen, 1)], scene.bearing) === 'left'
+          carHands[Math.min(chosen, 1)] === 'left'
             ? -HALF_ROAD * 0.62 : HALF_ROAD * 0.62,
           scene.project)
       : current.g.map(scene.project);
@@ -1717,6 +1852,7 @@ function renderVerdict() {
     $('limits').hidden = true;
     $('confirm').hidden = true;
     $('permit').hidden = true;
+    $('curb').hidden = true;
     $('prompt').textContent = current.s.length > 1
       ? 'Tap the kerb your car is on. Check the nearest house number.'
       : (current.s[0] && current.s[0].d === 'both'
@@ -1750,7 +1886,12 @@ function renderVerdict() {
   } else {
     $('headline').textContent = r.headline;
     $('headline').dataset.tone = r.tone;
-    $('sub').textContent = r.detail + ' ' + describe(side) + '.';
+    /* describe() is already the detail for some states; appending it produced
+       "Schedule unknown Schedule unknown." */
+    var extra = describe(side);
+    $('sub').textContent = (extra && extra !== r.detail && r.detail.indexOf(extra) === -1)
+      ? r.detail + ' ' + extra + '.'
+      : r.detail;
   }
 
   var note = side.x || NOTES[side.c];
@@ -1762,6 +1903,7 @@ function renderVerdict() {
   $('showcompass').hidden = compassOn || !current.s.some(function (x) { return x.f; });
   renderLimitRow();
   renderPermit();
+  renderCurb();
 }
 
 
@@ -1772,13 +1914,14 @@ function renderConfirm() {
   var bar = $('confirm');
   if (placed || !suggestion) { bar.hidden = true; return; }
   var side = current.s[chosen];
-  var who = side.d === 'odd' ? 'odd' : side.d === 'even' ? 'even' : 'this';
+  var who = side.d === 'odd' ? 'odd' : side.d === 'even' ? 'even'
+          : side.d === 'both' ? 'whole' : 'this';
   bar.hidden = false;
   bar.innerHTML = '';
 
   var q = document.createElement('p');
   q.className = 'confirm-q';
-  q.textContent = 'Looks like the ' + who + ' side' +
+  q.textContent = 'Looks like the ' + who + (who === 'whole' ? ' block' : ' side') +
     (side.f ? ' (' + FACING[side.f] + ')' : '') + ' — ' + suggestion.why + '.';
   bar.appendChild(q);
 
@@ -1791,14 +1934,20 @@ function renderConfirm() {
   yes.textContent = "Yes, that's me";
   yes.onclick = function () { placeCar(chosen); };
 
-  var no = document.createElement('button');
-  no.type = 'button';
-  no.className = 'btn';
-  no.textContent = 'Other side';
-  no.onclick = function () { placeCar(chosen === 0 ? 1 : 0); };
-
   row.appendChild(yes);
-  row.appendChild(no);
+
+  /* Only offer the other side when there is one. On a block with a single
+     recorded side this called placeCar(1), and moveCar then read .f off an
+     undefined side and threw -- leaving the confirm bar up with no verdict
+     under it, at the moment someone needs an answer. */
+  if (current.s.length > 1) {
+    var no = document.createElement('button');
+    no.type = 'button';
+    no.className = 'btn';
+    no.textContent = 'Other side';
+    no.onclick = function () { placeCar(chosen === 0 ? 1 : 0); };
+    row.appendChild(no);
+  }
   bar.appendChild(row);
 }
 
@@ -1899,14 +2048,15 @@ function baseStyle() {
 
 function paintSides() {
   if (!map || !current) return;
-  var bearing = scene ? scene.bearing : 0;
+  var mapHands = current.s.length === 1
+    ? ['left', 'right'] : handsForSides(current.s);
   var feats = current.s.slice(0, 2).map(function (side, i) {
     var v = verdictFor(side, new Date());
     /* Same colours the kerbs use on stage, so the two views agree at a glance. */
     var colour = v.tone === 'now' ? '#ff453a'
                : v.tone === 'soon' ? '#ff9f0a'
                : v.tone === 'ok' ? '#32d74b' : '#6c7784';
-    var hand = handOfSide(side, bearing);
+    var hand = mapHands[i];
     return {
       type: 'Feature',
       properties: { color: colour, offset: hand === 'left' ? -7 : 7,
@@ -2070,15 +2220,27 @@ function onPosition(pos) {
         return { city: c, segs: segs };
       });
     })).then(function (sets) {
-      var best = null;
+      var found = [];
       sets.forEach(function (set) {
         segments = set.segs;
         var hit = nearestSegment(lon, lat);
-        if (hit && (!best || hit.distance < best.distance)) {
-          best = { segment: hit.segment, distance: hit.distance,
-                   city: set.city, segs: set.segs };
+        if (hit) {
+          found.push({ segment: hit.segment, distance: hit.distance,
+                       city: set.city, segs: set.segs });
         }
       });
+      found.sort(function (a, b) { return a.distance - b.distance; });
+      var best = found[0] || null;
+
+      /* Emeryville's bbox sits inside Oakland's and both cities digitise the
+         same border streets, with centrelines sometimes a metre apart. Picking
+         the nearer one there is a coin toss inside GPS error -- and on the
+         shared blocks the two cities often publish DIFFERENT schedules. Where
+         the margin is meaningless, offer both rather than pick one. */
+      if (best && found[1] && found[1].city.id !== best.city.id &&
+          (found[1].distance - best.distance) < 8) {
+        best.rival = found[1];
+      }
       return best;
     });
   }
@@ -2106,6 +2268,7 @@ function onPosition(pos) {
         return;
       }
       var city = hit.city;
+      rival = hit.rival || null;
       cityId = city.id;
       segments = hit.segs;
       holidays = holidaysAll ? holidaysAll[city.id] : null;
@@ -2148,11 +2311,9 @@ function onPosition(pos) {
       $('detail').hidden = false;
       $('vintage').textContent = city.vintage +
         ' Schedules can change without the data changing.' +
-        (holidayCoverageEndsSoon()
-          ? ' Holiday dates in this app run out soon — after that, sweeps on ' +
-            'city holidays will not be excluded.'
-          : '');
+        holidayWarning();
       renderStage();
+      renderRival();
       flyIn();
       showParkedStamp();
       renderRecall();
