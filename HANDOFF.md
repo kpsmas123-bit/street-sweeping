@@ -8,6 +8,8 @@ Repo: kpsmas123-bit/street-sweeping (public)
 
 ## Where the work stands
 
+Three cities live: Berkeley, Oakland, Emeryville.
+
 Done and deployed:
 
 - Berkeley + Oakland street sweeping, both sides per block, verdict per side.
@@ -15,7 +17,9 @@ Done and deployed:
   records no sides), with 88 blocks whose week the city does not state.
 - Overnight windows (Emeryville sweeps 8pm-5am on 180 routes).
 - Berkeley permit areas with rules (753 blocks); Oakland permit zones without
-  rules, because Oakland does not publish them (915 blocks).
+  rules, because Oakland does not publish them (897 blocks).
+- Oakland downtown kerb inventory: 2,107 sides carry a kerb regulation (red
+  kerb, bus stop, metered with rate, time limit). Downtown only.
 - Side inference from GPS offset and heading, always shown as a question.
 - A compass "aim the phone the way the car faces" resolver.
 - Overhead scene drawn from real street geometry, camera fly-in, a sweeper that
@@ -44,8 +48,11 @@ In rough value order:
    time limits, meters, and colour-coded kerbs. Oakland's meters (8,107 points,
    current) and citywide kerb colours (35,174 lines, but surveyed 2005-06 —
    treat as advisory only) are also available.
-3. **Holiday tables end in 2027.** The UI warns when coverage is within 60 days
-   of running out. Extend from each city's own holidays page, not from blogs.
+3. **Holidays.** Berkeley and Oakland end in 2027; **Emeryville has no table at
+   all**, and the app now says so on screen. Extend from each city's own
+   holidays page, not from parking blogs. The Emeryville table is the most
+   valuable of the three to add, because its absence currently disables holiday
+   suppression there entirely.
 4. **The Cloudflare move.** `_headers` and `_redirects` are committed and ready;
    it needs the owner's account. Gives the app its own origin, which is the only
    real fix for the shared-localStorage problem, and real response headers.
@@ -73,6 +80,14 @@ Every one of these was a real bug that shipped:
 - A window whose end is before its start runs past midnight and belongs to the
   day it **starts** on; Oakland's 00:00-03:00 looks similar but does not.
 - "1st or 2nd Thursday" is not a date. Keep the block, say what is known.
+- A side's compass tag comes from the block's **end-to-end** bearing. Anything
+  comparing against a local sub-segment bearing will disagree with it and can
+  put both kerbs on the same hand.
+- Emeryville's bbox is **inside** Oakland's and they share border streets a
+  metre apart, with different schedules. Nearest-block alone cannot separate
+  them; the app surfaces both when the margin is inside GPS error.
+- Ship filters must not ask only "is it swept" — a permit zone or a kerb
+  regulation on an unswept block is still a restriction.
 
 ## Running it
 
