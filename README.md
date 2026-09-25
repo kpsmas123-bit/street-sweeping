@@ -119,6 +119,23 @@ wrong kerb, which it did.
 Tapping a card only highlights that side on the map. Nothing about the answer
 depends on the app guessing where the car is.
 
+## Permit zones
+
+The commonest citation after sweeping.
+
+**Berkeley** publishes both halves: areas on a separate ArcGIS org updated far
+more recently than the sweeping data, and the hours in an enforcement-schedule
+PDF. 753 blocks carry an area and its two-hour rule, resolved at build time so
+the client never fetches the 480 kB of polygons. Overlap zones like "AB" take
+the union of their constituents' enforced days; Area E's Saturday footnote is
+carried as a caveat rather than resolved either way.
+
+**Oakland** publishes the zones (842 kerb lines, A–R, no H) but *not* the hours
+or the limit, and they vary by zone — not on the RPP pages, not in the feature
+service. So 915 Oakland blocks carry a zone letter and the app says the hours
+are unpublished. Borrowing Berkeley's two-hour rule would be presenting a guess
+as a regulation.
+
 ## Which way the side faces
 
 Each side is tagged with the compass direction it faces, so "east side" is

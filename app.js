@@ -12,7 +12,7 @@ var CITIES = [];
 
 var DAY = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 var ORD = { 1: '1st', 2: '2nd', 3: '3rd', 4: '4th', 5: '5th' };
-var SIDE_COLOR = ['#007aff', '#ff9500'];   /* two lines, two colours, user picks */
+var SIDE_COLOR = ['#32d74b', '#ff9f0a'];   /* matches the kerb colours on stage */
 
 var segments = [];
 var holidays = null;      /* the matched city's rule + dates */
@@ -644,6 +644,20 @@ function forgetSpot() {
   setTimeout(function () { $('status').hidden = true; }, 2000);
 }
 
+/* Hand off to ParkMobile. The custom scheme opens the installed app; if nothing
+   claims it the page stays put, so fall back to the web after a moment. */
+function openParkMobile() {
+  var fellBack = false;
+  var t = setTimeout(function () {
+    if (!fellBack) window.location.href = 'https://parkmobile.io/';
+  }, 700);
+  window.addEventListener('pagehide', function () {
+    fellBack = true;
+    clearTimeout(t);
+  }, { once: true });
+  window.location.href = 'parkmobile://';
+}
+
 function startTicking() {
   if (tick) clearInterval(tick);
   tick = setInterval(function () {
@@ -970,6 +984,19 @@ function renderRecall() {
 function rppStatus(seg, now) {
   var r = seg && seg.r;
   if (!r) return null;
+
+  /* Oakland publishes the zones but not their hours or limits, and they vary by
+     zone. Saying which zone you are in is most of the value; inventing the rest
+     from Berkeley's two-hour rule would be presenting a guess as a regulation. */
+  if (!r.w || !r.s) {
+    return {
+      area: r.a, limit: null, enforcing: null, unknownRule: true,
+      note: null,
+      text: 'Permit zone ' + r.a + ' · the city does not publish the hours or ' +
+            'the limit for this zone — the sign does'
+    };
+  }
+
   var dow = now.getDay();
   var mins = now.getHours() * 60 + now.getMinutes();
   var enforcing = (r.w || []).indexOf(dow) !== -1 &&
@@ -1004,10 +1031,11 @@ function renderPermit() {
 
   el.hidden = false;
   el.innerHTML = '';
-  el.setAttribute('data-on', String(st.enforcing));
+  el.setAttribute('data-on', String(st.enforcing === true));
 
   var line = document.createElement('span');
-  line.textContent = st.text + (st.enforcing ? ' · enforcing now' : ' · not enforcing now');
+  line.textContent = st.text +
+    (st.unknownRule ? '' : (st.enforcing ? ' · enforcing now' : ' · not enforcing now'));
   el.appendChild(line);
   if (st.note) {
     var n = document.createElement('span');
@@ -1676,6 +1704,17 @@ function renderLimitRow() {
   label.className = 'chip-label';
   label.textContent = 'meter / permit limit';
   row.appendChild(label);
+
+  /* ParkMobile has no public API, and automating a signed-in account would mean
+     handling someone's credentials and breaking their terms. So this is a plain
+     hand-off: open the app to pay, and the limit you set here counts the same
+     session down alongside the sweeping schedule. */
+  var pm = document.createElement('button');
+  pm.type = 'button';
+  pm.className = 'chip chip--pm';
+  pm.textContent = 'ParkMobile';
+  pm.onclick = openParkMobile;
+  row.appendChild(pm);
 }
 
 /* --------------------------------------------------------------------- map */
@@ -1689,9 +1728,11 @@ function baseStyle() {
       picked:  { type: 'geojson', data: { type: 'FeatureCollection', features: [] } }
     },
     layers: [
-      { id: 'bg', type: 'background', paint: { 'background-color': '#e9e9ee' } },
+      /* Match the app rather than the old light theme -- opening the map should
+         not feel like leaving the app. */
+      { id: 'bg', type: 'background', paint: { 'background-color': '#0b0d10' } },
       { id: 'streets', type: 'line', source: 'streets',
-        paint: { 'line-color': '#b9b9c0', 'line-width': 3 } },
+        paint: { 'line-color': '#2b323c', 'line-width': 4 } },
       { id: 'picked', type: 'line', source: 'picked',
         paint: {
           'line-color': ['get', 'color'],
@@ -1946,7 +1987,13 @@ var lastFix = null;
 
 function showMap() {
   $('mapwrap').hidden = false;
-  if (map) { map.resize(); return; }
+  if (map) {
+    /* The container was display:none until now, so the canvas has no size yet. */
+    map.resize();
+    paintContext(lastFix[0], lastFix[1]);
+    paintSides();
+    return;
+  }
   var g = current.g;
   var mid = g[Math.floor(g.length / 2)];
   map = new maplibregl.Map({
@@ -1957,6 +2004,7 @@ function showMap() {
     attributionControl: false
   });
   map.on('load', function () {
+    map.resize();
     if (lastFix) {
       paintContext(lastFix[0], lastFix[1]);
       new maplibregl.Marker({ color: '#0a84ff' }).setLngLat(lastFix).addTo(map);

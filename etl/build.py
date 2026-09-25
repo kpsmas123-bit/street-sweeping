@@ -7,6 +7,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import normalize_berkeley as BK        # noqa: E402
 import rpp as RPP                      # noqa: E402
+import rpp_oakland as OAKRPP           # noqa: E402
 import normalize_oakland as OAK        # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -208,11 +209,15 @@ def pack(seg):
     if seg.get('one_way'):
         out['y'] = seg['one_way']
     if seg.get('rpp'):
-        r = seg['rpp']['rule']
-        out['r'] = {'a': seg['rpp']['area'], 'm': r['limit_minutes'],
-                    'w': r['weekdays'], 's': r['start'], 'e': r['end']}
-        if r.get('note'):
-            out['r']['n'] = r['note']
+        r = seg['rpp'].get('rule')
+        out['r'] = {'a': seg['rpp']['area']}
+        if r:
+            out['r']['m'] = r['limit_minutes']
+            out['r']['w'] = r['weekdays']
+            out['r']['s'] = r['start']
+            out['r']['e'] = r['end']
+            if r.get('note'):
+                out['r']['n'] = r['note']
     return out
 
 
@@ -220,8 +225,18 @@ def has_any_schedule(seg):
     return any(s['schedule']['kind'] in ('weekly', 'nth_weekday') for s in seg['sides'])
 
 
+def load_oakland_rpp():
+    path = os.path.join(HERE, 'oakland_rpp.json')
+    if not os.path.exists(path):
+        print('  no oakland_rpp.json; run etl/rpp_oakland.py', file=sys.stderr)
+        return None
+    return json.load(open(path))['index']
+
+
 def build_oakland():
     raw = json.load(open(os.path.join(RAW, 'oakland.json')))
+    rpp_index = load_oakland_rpp()
+    rpp_hits = 0
     segs = []
     for f in raw:
         path = longest_path(f.get('geometry'))
@@ -235,6 +250,13 @@ def build_oakland():
         day_odd = OAK.clean(f['attributes'].get('DAY_ODD'))
         day_even = OAK.clean(f['attributes'].get('DAY_EVEN'))
         seg['_ms'] = OAK.SIDE_POINTER in (day_odd, day_even)
+        if rpp_index:
+            mid = seg['geometry']['coordinates'][len(seg['geometry']['coordinates']) // 2]
+            zone = OAKRPP.zone_for(mid[0], mid[1], rpp_index)
+            if zone:
+                # Zone only: Oakland publishes no hours or limit for these.
+                seg['rpp'] = {'area': zone, 'rule': None}
+                rpp_hits += 1
         segs.append(add_compass(seg))
     before = len(segs)
     segs = merge_major_street_pairs(segs)
@@ -242,8 +264,9 @@ def build_oakland():
     # before the merge, so re-check them together.
     for seg in segs:
         drop_inconsistent_compass(seg)
-    print('  oakland: %d features -> %d segments (%d major-street pairs folded)'
-          % (len(raw), len(segs), before - len(segs)), file=sys.stderr)
+    print('  oakland: %d features -> %d segments (%d major-street pairs folded), '
+          '%d in a permit zone'
+          % (len(raw), len(segs), before - len(segs), rpp_hits), file=sys.stderr)
     return segs
 
 
