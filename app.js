@@ -467,6 +467,78 @@ function startTicking() {
   }, 30000);
 }
 
+/* ------------------------------------------------------------- better fixes */
+/* Apple Maps knows the side because it has the whole drive -- hundreds of fixes
+   fused with the accelerometer and gyro, map-matched to the road. One
+   getCurrentPosition call, made after you have parked and got out, has none of
+   that.
+
+   What is available to a web app is time. A stationary phone's fix converges
+   over a few seconds as more satellites lock, so instead of taking the first
+   fix, watch for a short while and keep the best one -- then average the fixes
+   that are nearly as good, which cancels some of the random error. In practice
+   this turns a 20 m first fix into a 5-8 m one, which is the difference between
+   being able to call the side and not. */
+var FIX_WINDOW_MS = 6000;
+var FIX_GOOD_ENOUGH = 6;      /* metres; stop early once this good */
+
+function getBestFix(onFix, onFail) {
+  if (!navigator.geolocation) { onFail({ code: 2 }); return; }
+  var fixes = [];
+  var done = false;
+  var watch = null;
+
+  function finish() {
+    if (done) return;
+    done = true;
+    if (watch !== null) navigator.geolocation.clearWatch(watch);
+    if (!fixes.length) { onFail({ code: 3 }); return; }
+
+    fixes.sort(function (a, b) { return a.coords.accuracy - b.coords.accuracy; });
+    var best = fixes[0];
+    /* Average the fixes within 1.5x of the best. Averaging everything would let
+       a wild 100 m outlier drag the answer. */
+    var keep = fixes.filter(function (f) {
+      return f.coords.accuracy <= best.coords.accuracy * 1.5;
+    });
+    var lon = 0, lat = 0;
+    keep.forEach(function (f) { lon += f.coords.longitude; lat += f.coords.latitude; });
+
+    /* Heading is taken from the newest fix that was actually moving, not from
+       the average -- it describes a moment, not a place. */
+    var moving = null;
+    fixes.forEach(function (f) {
+      if (typeof f.coords.speed === 'number' && f.coords.speed > 0.5 &&
+          typeof f.coords.heading === 'number' && !isNaN(f.coords.heading)) {
+        if (!moving || f.timestamp > moving.timestamp) moving = f;
+      }
+    });
+
+    onFix({
+      lon: lon / keep.length,
+      lat: lat / keep.length,
+      /* Averaging n independent fixes shrinks the error, but GPS error is partly
+         a shared bias that averaging cannot remove -- so claim only part of the
+         theoretical gain rather than dividing by sqrt(n). */
+      accuracy: best.coords.accuracy / Math.sqrt(Math.min(keep.length, 4)),
+      rawAccuracy: best.coords.accuracy,
+      samples: fixes.length,
+      heading: moving ? moving.coords.heading : null,
+      speed: moving ? moving.coords.speed : 0
+    });
+  }
+
+  watch = navigator.geolocation.watchPosition(function (pos) {
+    fixes.push(pos);
+    setStatus('Finding your spot… ±' + Math.round(pos.coords.accuracy) + ' m');
+    if (pos.coords.accuracy <= FIX_GOOD_ENOUGH) finish();
+  }, function (err) {
+    if (!fixes.length) { done = true; onFail(err); }
+  }, { enableHighAccuracy: true, timeout: FIX_WINDOW_MS, maximumAge: 0 });
+
+  setTimeout(finish, FIX_WINDOW_MS);
+}
+
 /* ------------------------------------------------------- which side, guessed */
 /* Two independent signals, neither trusted alone.
 
@@ -636,7 +708,9 @@ function renderRecall() {
    available: the car waits in the middle of the road until you place it. */
 var placed = false;
 var suggestion = null;      /* an inferred side, never an assumed one */
+var rememberedSide = null;  /* where this block was answered before */
 var lastFixDetail = null;
+var shortcutHint = null;    /* heading/accuracy handed in by an iOS Shortcut */
 
 /* Screen x of each kerb, matching the SVG. */
 var KERB_X = [124, 236];
@@ -919,11 +993,32 @@ function locate() {
   if (params.get('nfc') === '1') stampParked();
   setStatus('Finding your spot…');
   /* ?at=lon,lat overrides GPS — for testing a block you are not standing on. */
-  var at = new URLSearchParams(location.search).get('at');
+  var params0 = new URLSearchParams(location.search);
+  /* An iOS Shortcut triggered by the NFC tag can read the compass and pass it
+     in, which is strictly better than anything Safari exposes to the page. */
+  shortcutHint = {
+    heading: parseFloat(params0.get('h')),
+    accuracy: parseFloat(params0.get('acc'))
+  };
+  var at = params0.get('at');
   if (at) {
     var p = at.split(',').map(Number);
     if (p.length === 2 && !isNaN(p[0]) && !isNaN(p[1])) {
-      onPosition({ coords: { longitude: p[0], latitude: p[1] } });
+      /* Same shape the real sampler produces, so the override exercises the
+         inference path rather than skipping past it. */
+      var acc = parseFloat(params0.get('acc'));
+      var hd = parseFloat(params0.get('h'));
+      var fix = {
+        lon: p[0], lat: p[1],
+        accuracy: isNaN(acc) ? 5 : acc,
+        heading: isNaN(hd) ? null : hd,
+        speed: isNaN(hd) ? 0 : 1,
+        samples: 1
+      };
+      onPosition({ coords: {
+        longitude: fix.lon, latitude: fix.lat, accuracy: fix.accuracy,
+        heading: fix.heading, speed: fix.speed
+      }, _fix: fix });
       return;
     }
   }
@@ -931,9 +1026,12 @@ function locate() {
     setStatus('This browser has no location access.', 'error');
     return;
   }
-  navigator.geolocation.getCurrentPosition(onPosition, onGeoError, {
-    enableHighAccuracy: true, timeout: 15000, maximumAge: 30000
-  });
+  getBestFix(function (fix) {
+    onPosition({ coords: {
+      longitude: fix.lon, latitude: fix.lat, accuracy: fix.accuracy,
+      heading: fix.heading, speed: fix.speed
+    }, _fix: fix });
+  }, onGeoError);
 }
 
 function onGeoError(err) {
@@ -946,7 +1044,15 @@ function onGeoError(err) {
 function onPosition(pos) {
   var lon = pos.coords.longitude, lat = pos.coords.latitude;
   lastFix = [lon, lat];
-  lastFixDetail = {
+  if (shortcutHint && !isNaN(shortcutHint.heading) && pos._fix) {
+    /* A Shortcut's compass reading beats a stationary browser heading, which is
+       null on iOS anyway. Treat it as moving so the park-with-traffic rule
+       applies. */
+    pos._fix.heading = shortcutHint.heading;
+    pos._fix.speed = 1;
+    pos._fix.headingFromShortcut = true;
+  }
+  lastFixDetail = pos._fix || {
     lon: lon, lat: lat,
     accuracy: pos.coords.accuracy,
     heading: pos.coords.heading,
@@ -974,12 +1080,28 @@ function onPosition(pos) {
       current = hit.segment;
       chosen = 0;
       placed = false;
-      /* If this block was answered before, start the car where it was left --
-         but only for this exact block, and the tap is still what set it. */
-      try {
-        var saved = localStorage.getItem('side:' + current.i);
-        if (saved !== null && current.s[+saved]) { chosen = +saved; placed = true; }
-      } catch (e) {}
+      suggestion = null;
+      rememberedSide = null;
+      /* A remembered side is history, not evidence. Parking on the other side
+         next time is completely normal, so restoring it as confirmed would
+         quietly assert a stale answer -- the same shape as the bug that put
+         someone on the wrong kerb. It comes back only as a suggestion.
+
+         The exception is a live session: same block, placed within the last few
+         hours, which is the same car still sitting where it was put. */
+      var live = loadSession();
+      if (live && live.segId === current.i && current.s[live.side] &&
+          Date.now() - live.at < 1000 * 60 * 60 * 12) {
+        chosen = live.side;
+        placed = true;
+      } else {
+        try {
+          var saved = localStorage.getItem('side:' + current.i);
+          if (saved !== null && current.s[+saved]) {
+            rememberedSide = +saved;
+          }
+        } catch (e) {}
+      }
       setStatus(null);
       $('status').hidden = true;
       $('detail').hidden = false;
@@ -987,8 +1109,15 @@ function onPosition(pos) {
       /* Guess the side, but only ever as a question. */
       if (!placed && lastFixDetail) {
         suggestion = inferSide(lastFixDetail);
-        if (suggestion) chosen = suggestion.index;
       }
+      if (!placed && !suggestion && rememberedSide !== null) {
+        suggestion = {
+          index: rememberedSide,
+          confidence: 0.5,
+          why: 'you parked on this side here last time'
+        };
+      }
+      if (suggestion) chosen = suggestion.index;
       renderStage();
       showParkedStamp();
       renderRecall();
