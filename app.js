@@ -379,9 +379,11 @@ function renameTimerShortcut() {
   renderTimerButton();
 }
 
-/* The Clock app is for hours, not weeks. Offering "Timer - 19d 8h" for a sweep
-   three weeks out is noise; past a day the calendar export is the right tool. */
-var TIMER_MAX_MINUTES = 12 * 60;
+/* iOS Clock will not take a timer longer than a day, and "Timer - 19d 8h" for a
+   sweep three weeks out would be noise even if it would. So the button appears
+   when there is something to count down to inside a day -- a sweep starting, a
+   sweep ending, or a meter or permit limit you set. */
+var TIMER_MAX_MINUTES = 23 * 60 + 59;
 
 function renderTimerButton() {
   var b = $('timer');
@@ -390,21 +392,17 @@ function renderTimerButton() {
   var worthIt = mins && mins <= TIMER_MAX_MINUTES;
   b.hidden = !worthIt;
   if (worthIt) b.textContent = 'Timer · ' + countdownText(mins * 60000);
-  /* With no timer on offer the calendar export stops being the quiet fallback
-     and becomes the only way to be reminded, so it moves up. */
-  var cal = $('remind');
-  if (cal) {
-    cal.classList.toggle('btn--primary', !worthIt);
-    cal.classList.toggle('btn--quiet', !!worthIt);   /* or it stays transparent */
-  }
 }
 
 /* ------------------------------------------------------------- calendar */
 /* A static site cannot schedule a push notification: the Notification Triggers
    API was abandoned and Web Push needs a server holding VAPID keys. A recurring
-   calendar event with an alarm covers the same need with no backend, and it is
-   what people already do by hand -- so it is the reminder mechanism, not a
-   consolation prize. */
+   calendar event with an alarm is the only thing left that can reach past the
+   end of a Clock timer.
+
+   The owner of this app does not use a calendar, and said so, so it is not a
+   button: it is a text link in the footer, for a sweep further out than a
+   timer can reach. The timer is the reminder. */
 var VDAY = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
 
 function pad(n) { return ('0' + n).slice(-2); }
