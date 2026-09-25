@@ -1884,7 +1884,10 @@ function citiesFor(lon, lat) {
 }
 
 function coverageNames() {
-  return CITIES.map(function (c) { return c.name; }).join(' and ');
+  var names = CITIES.map(function (c) { return c.name; });
+  if (names.length < 3) return names.join(' and ');
+  /* "Berkeley and Emeryville and Oakland" reads like a child listing things. */
+  return names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
 }
 
 function locate() {
@@ -1936,7 +1939,23 @@ function locate() {
   }, onGeoError);
 }
 
+/* Nothing to draw: hide the car rather than leaving it adrift on black, which
+   reads as a broken screen rather than an empty one. */
+function clearStage() {
+  ['road', 'centerline', 'kerbA', 'kerbB'].forEach(function (id) {
+    var el = $(id);
+    if (el) el.setAttribute('d', '');
+  });
+  var ctx = $('context');
+  if (ctx) ctx.innerHTML = '';
+  var car = $('car');
+  if (car) car.style.opacity = '0';
+  var sw = $('sweeper');
+  if (sw) sw.hidden = true;
+}
+
 function onGeoError(err) {
+  clearStage();
   var msg = err.code === 1 ? 'Location permission denied — enable it to check your block.'
           : err.code === 3 ? 'Location timed out. Try again with a clearer view of the sky.'
           : 'Could not get your location.';
@@ -1962,8 +1981,9 @@ function onPosition(pos) {
   };
   var candidates = citiesFor(lon, lat);
   if (!candidates.length) {
-    setStatus('No data for where you are. Covered so far: ' + coverageNames() + '.',
-              'error');
+    clearStage();
+    setStatus('No data for where you are. Covered so far: ' + coverageNames() +
+              '. Go by the posted sign.', 'error');
     return;
   }
   setStatus('Loading ' + candidates.map(function (c) { return c.name; }).join(' / ') + '…');
@@ -2012,7 +2032,8 @@ function onPosition(pos) {
     })
     .then(function (hit) {
       if (!hit) {
-        setStatus('No street we have data for within ' + 60 + ' m of you. ' +
+        clearStage();
+        setStatus('No street we have data for within 60 m of you. ' +
                   'Go by the posted sign.', 'error');
         return;
       }
