@@ -6,14 +6,9 @@
    Oakland's layer reports dataLastEditDate = 2021-06-21 and Berkeley's schedule
    PDFs are dated 2022-03, so both are years old. Saying so is more honest than a
    "last updated today" that only reflects our own build. */
-var CITIES = [
-  { id: 'berkeley', file: 'data/berkeley.json',
-    bbox: [-122.328, 37.845, -122.234, 37.906],
-    vintage: 'City schedule published March 2022.' },
-  { id: 'oakland',  file: 'data/oakland.json',
-    bbox: [-122.355, 37.632, -122.114, 37.885],
-    vintage: 'City data last edited June 2021.' }
-];
+/* Coverage is data, not code: data/cities.json is emitted by the ETL, so adding
+   a city never touches the app. */
+var CITIES = [];
 
 var DAY = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 var ORD = { 1: '1st', 2: '2nd', 3: '3rd', 4: '4th', 5: '5th' };
@@ -311,6 +306,15 @@ function downloadIcs() {
 /* ------------------------------------------------------------------ render */
 function $(id) { return document.getElementById(id); }
 
+/* Street names and address ranges come from city data. They are not attacker
+   controlled today, but they are third-party strings rendered with innerHTML,
+   and a stray "<" in a future city's data should show as a "<". */
+function esc(v) {
+  return String(v == null ? '' : v)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 function setStatus(text, tone) {
   var el = $('status');
   if (!text) { el.hidden = true; return; }
@@ -370,6 +374,260 @@ var NOTES = {
    street whose two sides sweep on different days, and Parker St's do: odd on
    the 2nd Wednesday, even on the 2nd Tuesday. Showing one answer for an
    unconfirmed side is how you end up on the wrong curb. */
+/* --------------------------------------------------------- parked session */
+/* Placing the car is the save. There is no "save my spot" button, because the
+   tap that answers "which kerb" already carries everything worth storing: where
+   the car is, which side, when it landed, and what the deadline is.
+
+   Everything lives in localStorage. No backend, so no account, nothing to leak,
+   and it still answers with no signal. */
+var SESSION_KEY = 'parked.session';
+var session = null;
+var tick = null;
+
+function loadSession() {
+  try {
+    var raw = localStorage.getItem(SESSION_KEY);
+    session = raw ? JSON.parse(raw) : null;
+  } catch (e) { session = null; }
+  /* A car parked more than four days ago is almost certainly not still there. */
+  if (session && Date.now() - session.at > 1000 * 60 * 60 * 96) session = null;
+  return session;
+}
+
+function saveSession(patch) {
+  session = Object.assign(loadSession() || {}, patch);
+  try { localStorage.setItem(SESSION_KEY, JSON.stringify(session)); } catch (e) {}
+  return session;
+}
+
+function clearSession() {
+  session = null;
+  try { localStorage.removeItem(SESSION_KEY); } catch (e) {}
+}
+
+/* The moment the car has to move: the sooner of the next sweep and any manual
+   limit the driver set for a meter or a permit zone. */
+function deadlineFor(side, now) {
+  var out = null;
+  var r = evaluate(side, now);
+  if (r.state === 'active') {
+    out = { at: atTime(now, side.t[1]), why: 'sweeping now' };
+  } else if (r.state === 'today') {
+    out = { at: atTime(now, side.t[0]), why: 'sweeping starts' };
+  } else if (r.next && side.t) {
+    out = { at: atTime(r.next, side.t[0]), why: 'sweeping starts' };
+  }
+  var s = loadSession();
+  if (s && s.limitUntil && s.segId === (current && current.i)) {
+    var lim = new Date(s.limitUntil);
+    if (!out || lim < out.at) out = { at: lim, why: s.limitLabel || 'time limit' };
+  }
+  return out;
+}
+
+function atTime(dateLike, hhmm) {
+  var d = new Date(dateLike);
+  var p = (hhmm || '00:00').split(':');
+  d.setHours(+p[0], +p[1], 0, 0);
+  return d;
+}
+
+function countdownText(ms) {
+  if (ms <= 0) return 'now';
+  var mins = Math.floor(ms / 60000);
+  if (mins < 60) return mins + ' min';
+  var hrs = Math.floor(mins / 60);
+  if (hrs < 24) return hrs + 'h ' + (mins % 60) + 'm';
+  var days = Math.floor(hrs / 24);
+  return days + 'd ' + (hrs % 24) + 'h';
+}
+
+/* --- manual limit (meter, permit zone, ParkMobile session) ------------------ */
+function setLimit(minutes, label) {
+  saveSession({
+    segId: current ? current.i : null,
+    limitUntil: Date.now() + minutes * 60000,
+    limitLabel: label || (minutes >= 60 ? (minutes / 60) + 'h limit' : minutes + ' min')
+  });
+  renderVerdict();
+  renderLimitRow();
+}
+
+function clearLimit() {
+  saveSession({ limitUntil: null, limitLabel: null });
+  renderVerdict();
+  renderLimitRow();
+}
+
+function startTicking() {
+  if (tick) clearInterval(tick);
+  tick = setInterval(function () {
+    if (current && placed) renderVerdict();
+  }, 30000);
+}
+
+/* ------------------------------------------------------- which side, guessed */
+/* Two independent signals, neither trusted alone.
+
+   1. Perpendicular offset. Project the fix onto the centreline and take the
+      signed cross product: that says which hand of the line the car is on. The
+      catch is scale -- the kerb sits ~4-5 m from the centreline and a phone fix
+      is 3-30 m, so this is only worth anything when the phone reports good
+      accuracy AND the offset clears it. coords.accuracy is what makes this
+      honest: the phone tells us when not to trust it.
+
+   2. Heading. In the US you park with the flow of traffic, so the kerb is on
+      your right. Heading is good to ~15 degrees and the two sides are 180 apart,
+      so the margin is enormous and GPS precision is irrelevant. This is the
+      stronger signal by far -- when the two disagree, this one is usually right.
+
+   Neither is ever allowed to assert. A guess pre-positions the car and says so;
+   confirming it is a tap, and so is overriding it. */
+
+function segmentBearingNear(lon, lat) {
+  var g = current.g, mx = MX_AT(lat);
+  var best = null, bestD = Infinity;
+  for (var i = 0; i < g.length - 1; i++) {
+    var d = distToSegment([lon, lat], g[i], g[i + 1], mx);
+    if (d < bestD) { bestD = d; best = i; }
+  }
+  if (best === null) return null;
+  var a = g[best], b = g[best + 1];
+  var dx = (b[0] - a[0]) * mx, dy = (b[1] - a[1]) * MY;
+  return {
+    bearing: (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360,
+    a: a, b: b, dist: bestD
+  };
+}
+
+/* Signed perpendicular offset in metres: positive = left of the direction of
+   digitisation, negative = right. */
+function signedOffset(lon, lat, seg) {
+  var mx = MX_AT(lat);
+  var ax = seg.a[0] * mx, ay = seg.a[1] * MY;
+  var bx = seg.b[0] * mx, by = seg.b[1] * MY;
+  var px = lon * mx, py = lat * MY;
+  var dx = bx - ax, dy = by - ay;
+  var len = Math.hypot(dx, dy);
+  if (!len) return 0;
+  return ((px - ax) * dy - (py - ay) * dx) / len * -1;
+}
+
+function cardinalOf(deg) {
+  deg = (deg % 360 + 360) % 360;
+  if (deg < 45 || deg >= 315) return 'N';
+  if (deg < 135) return 'E';
+  if (deg < 225) return 'S';
+  return 'W';
+}
+
+/* Which of the two sides sits on a given hand of the line. */
+function sideOnHand(hand, bearing) {
+  var want = cardinalOf(hand === 'left' ? bearing - 90 : bearing + 90);
+  for (var i = 0; i < current.s.length; i++) {
+    if (current.s[i].f === want) return i;
+  }
+  return -1;
+}
+
+function inferSide(fix) {
+  if (!current || current.s.length < 2) return null;
+  var seg = segmentBearingNear(fix.lon, fix.lat);
+  if (!seg) return null;
+
+  var votes = [];
+
+  /* --- offset vote --- */
+  var acc = fix.accuracy;
+  var off = signedOffset(fix.lon, fix.lat, seg);
+  if (typeof acc === 'number' && acc > 0 && Math.abs(off) > acc && Math.abs(off) < 25) {
+    var idx = sideOnHand(off > 0 ? 'left' : 'right', seg.bearing);
+    if (idx >= 0) {
+      votes.push({
+        index: idx,
+        weight: Math.min(1, Math.abs(off) / (acc * 2)),
+        why: 'you are ' + Math.round(Math.abs(off)) + ' m off the centreline'
+      });
+    }
+  }
+
+  /* --- heading vote --- */
+  /* Only when the fix was actually moving: a heading from a stationary phone is
+     noise, and coords.heading is null when speed is 0 on most devices. */
+  if (typeof fix.heading === 'number' && !isNaN(fix.heading) &&
+      typeof fix.speed === 'number' && fix.speed > 0.5) {
+    var kerbIdx = sideOnHand('right', fix.heading);
+    /* On a one-way street you may legally park either side, so the
+       park-with-traffic rule stops holding. */
+    var oneWay = current.y;
+    if (kerbIdx >= 0 && !oneWay) {
+      votes.push({
+        index: kerbIdx,
+        weight: 0.9,
+        why: 'you were heading ' + FACING[cardinalOf(fix.heading)] + ' as you parked'
+      });
+    }
+  }
+
+  if (!votes.length) return null;
+
+  var tally = {};
+  votes.forEach(function (v) { tally[v.index] = (tally[v.index] || 0) + v.weight; });
+  var bestIdx = null, bestScore = 0, total = 0;
+  Object.keys(tally).forEach(function (k) {
+    total += tally[k];
+    if (tally[k] > bestScore) { bestScore = tally[k]; bestIdx = +k; }
+  });
+  /* Signals that contradict each other cancel: say nothing rather than pick. */
+  var agreement = total ? bestScore / total : 0;
+  if (agreement < 0.75) return null;
+
+  return {
+    index: bestIdx,
+    confidence: Math.min(0.95, bestScore),
+    why: votes.filter(function (v) { return v.index === bestIdx; })
+              .map(function (v) { return v.why; })[0]
+  };
+}
+
+/* --------------------------------------------------------- back to the car */
+/* The car's location was saved the moment it was placed, so "where did I park"
+   costs nothing extra. Shown only when you are far enough away for the question
+   to be real. */
+function metresBetween(a, b) {
+  var mx = MX_AT((a[1] + b[1]) / 2);
+  return Math.hypot((b[0] - a[0]) * mx, (b[1] - a[1]) * MY);
+}
+
+function renderRecall() {
+  var el = $('recall');
+  var s = loadSession();
+  if (!el) return;
+  if (!s || !s.lat || !lastFix) { el.hidden = true; return; }
+  var away = metresBetween(lastFix, [s.lon, s.lat]);
+  if (away < 180) { el.hidden = true; return; }
+
+  var mins = Math.max(1, Math.round(away / 80));   /* ~4.8 km/h walking */
+  el.hidden = false;
+  el.innerHTML = '';
+  var text = document.createElement('span');
+  text.textContent = 'Your car is on ' + (s.street || 'a saved block') +
+    ' · ' + (away > 1200 ? (away / 1000).toFixed(1) + ' km' : Math.round(away) + ' m') +
+    ' · ' + mins + ' min walk';
+  var go = document.createElement('button');
+  go.type = 'button';
+  go.className = 'chip chip--on';
+  go.textContent = 'Walk back';
+  go.onclick = function () {
+    /* Hand off to whichever maps app the phone prefers. */
+    window.location.href = 'https://maps.apple.com/?daddr=' + s.lat + ',' + s.lon +
+                           '&dirflg=w';
+  };
+  el.appendChild(text);
+  el.appendChild(go);
+}
+
 /* ------------------------------------------------------------------ stage */
 /* An overhead view of the block with your car on it. GPS puts the car on the
    street -- that much it can do. Which kerb it sits on is still a tap, because
@@ -377,6 +635,8 @@ var NOTES = {
    what once sent someone to the wrong side. Here the guess is not even
    available: the car waits in the middle of the road until you place it. */
 var placed = false;
+var suggestion = null;      /* an inferred side, never an assumed one */
+var lastFixDetail = null;
 
 /* Screen x of each kerb, matching the SVG. */
 var KERB_X = [124, 236];
@@ -393,21 +653,21 @@ function renderStage() {
     var v = verdictFor(side, now);
     var kerb = $(i === 0 ? 'kerbA' : 'kerbB');
     kerb.setAttribute('data-tone', v.tone);
-    kerb.setAttribute('data-active', String(placed && chosen === i));
+    kerb.setAttribute('data-active', String((placed || suggestion) && chosen === i));
 
     var label = $(i === 0 ? 'labelA' : 'labelB');
     label.hidden = false;
     label.setAttribute('data-tone', v.tone);
-    label.setAttribute('aria-pressed', String(placed && chosen === i));
+    label.setAttribute('aria-pressed', String((placed || suggestion) && chosen === i));
     var who = side.d === 'odd' ? 'Odd' : side.d === 'even' ? 'Even'
             : side.d === 'both' ? 'This block' : 'Side ' + (i === 0 ? 'A' : 'B');
     var meta = [];
     if (side.a) meta.push(side.a);
     if (side.f) meta.push(FACING[side.f]);
     label.innerHTML =
-      '<span class="kl-side">' + who + '</span>' +
-      (meta.length ? '<span class="kl-meta">' + meta.join(' · ') + '</span>' : '') +
-      '<span class="kl-state">' + v.headline + '</span>';
+      '<span class="kl-side">' + esc(who) + '</span>' +
+      (meta.length ? '<span class="kl-meta">' + esc(meta.join(' · ')) + '</span>' : '') +
+      '<span class="kl-state">' + esc(v.headline) + '</span>';
     label.onclick = function () { placeCar(i); };
   });
 
@@ -425,17 +685,28 @@ function renderStage() {
 
 function moveCar() {
   var car = $('car');
-  var x = placed ? KERB_X[Math.min(chosen, 1)] : 180;
+  var onKerb = placed || suggestion;
+  var x = onKerb ? KERB_X[Math.min(chosen, 1)] : 180;
   car.style.transform = 'translate(' + x + 'px, 250px)';
-  car.classList.toggle('car--placing', !placed);
+  /* Unconfirmed reads as unconfirmed: hollow and breathing, not solid. */
+  car.classList.toggle('car--placing', !onKerb);
+  car.classList.toggle('car--guess', !placed && !!suggestion);
 }
 
 function placeCar(i) {
   chosen = i;
   placed = true;
+  suggestion = null;
   try { localStorage.setItem('side:' + current.i, String(i)); } catch (e) {}
+  /* The tap is the save. */
+  saveSession({
+    segId: current.i, side: i, at: Date.now(),
+    lon: lastFix && lastFix[0], lat: lastFix && lastFix[1],
+    street: current.n, city: cityId
+  });
   renderStage();
   paintSides();
+  startTicking();
 }
 
 /* Faint cross streets, purely to make the block read as a block. */
@@ -453,29 +724,126 @@ function drawCrossStreets() {
 function renderVerdict() {
   $('street').textContent = current.n || 'This block';
   var v = $('verdict');
-  if (!placed) {
+  if (!placed && !suggestion) {
     v.hidden = true;
+    $('limits').hidden = true;
+    $('confirm').hidden = true;
     $('prompt').textContent = current.s.length > 1
       ? 'Tap the kerb your car is on. Check the nearest house number.'
       : 'One kerb on this block.';
     $('remind').hidden = true;
     return;
   }
+
   var side = current.s[chosen];
-  var r = verdictFor(side, new Date());
+  var now = new Date();
+  var r = verdictFor(side, now);
+  var dl = deadlineFor(side, now);
   v.hidden = false;
+  renderConfirm();
+
   $('prompt').textContent = (side.d === 'odd' || side.d === 'even'
       ? side.d.charAt(0).toUpperCase() + side.d.slice(1) + ' side'
       : 'This kerb') +
     (side.a ? ' · ' + side.a : '') + (side.f ? ' · faces ' + FACING[side.f] : '');
-  $('headline').textContent = r.headline;
-  $('headline').dataset.tone = r.tone;
-  $('sub').textContent = r.detail + ' ' + describe(side) + '.';
+
+  /* Inside a day, a running countdown beats a date -- it is the number you act
+     on. Beyond that a countdown in days is just a date with extra steps. */
+  var left = dl ? dl.at - now : null;
+  if (left !== null && left > 0 && left < 1000 * 60 * 60 * 24) {
+    $('headline').textContent = 'Move in ' + countdownText(left);
+    $('headline').dataset.tone = left < 1000 * 60 * 60 * 2 ? 'now' : 'soon';
+    $('sub').textContent = 'Until ' + fmtClock(dl.at) + ' — ' + dl.why + '. ' +
+                           describe(side) + '.';
+  } else {
+    $('headline').textContent = r.headline;
+    $('headline').dataset.tone = r.tone;
+    $('sub').textContent = r.detail + ' ' + describe(side) + '.';
+  }
+
   var note = NOTES[side.c];
   $('note').hidden = !note;
   if (note) $('note').textContent = note;
   $('remind').hidden = !icsRule(side);
   $('showcompass').hidden = compassOn || !current.s.some(function (x) { return x.f; });
+  renderLimitRow();
+}
+
+
+/* The guess, stated out loud. It sits above the verdict rather than beside it,
+   because the whole answer below is conditional on it being right -- and last
+   time a quietly assumed side put someone on the wrong kerb. */
+function renderConfirm() {
+  var bar = $('confirm');
+  if (placed || !suggestion) { bar.hidden = true; return; }
+  var side = current.s[chosen];
+  var who = side.d === 'odd' ? 'odd' : side.d === 'even' ? 'even' : 'this';
+  bar.hidden = false;
+  bar.innerHTML = '';
+
+  var q = document.createElement('p');
+  q.className = 'confirm-q';
+  q.textContent = 'Looks like the ' + who + ' side' +
+    (side.f ? ' (' + FACING[side.f] + ')' : '') + ' — ' + suggestion.why + '.';
+  bar.appendChild(q);
+
+  var row = document.createElement('div');
+  row.className = 'confirm-row';
+
+  var yes = document.createElement('button');
+  yes.type = 'button';
+  yes.className = 'btn btn--primary';
+  yes.textContent = "Yes, that's me";
+  yes.onclick = function () { placeCar(chosen); };
+
+  var no = document.createElement('button');
+  no.type = 'button';
+  no.className = 'btn';
+  no.textContent = 'Other side';
+  no.onclick = function () { placeCar(chosen === 0 ? 1 : 0); };
+
+  row.appendChild(yes);
+  row.appendChild(no);
+  bar.appendChild(row);
+}
+
+function fmtClock(d) {
+  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+/* A meter, a permit zone, or a ParkMobile session is a second clock the city
+   data knows nothing about. One tap sets it; whichever deadline lands first is
+   the one the headline counts down to. */
+function renderLimitRow() {
+  var row = $('limits');
+  var s = loadSession();
+  var active = s && s.limitUntil && s.segId === current.i && s.limitUntil > Date.now();
+  row.hidden = !placed;
+  row.innerHTML = '';
+
+  if (active) {
+    var chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'chip chip--on';
+    chip.innerHTML = esc(s.limitLabel) + ' · ' +
+      esc(countdownText(s.limitUntil - Date.now())) + ' left <span class="x">✕</span>';
+    chip.onclick = clearLimit;
+    row.appendChild(chip);
+    return;
+  }
+
+  [[60, '1h'], [120, '2h'], [240, '4h']].forEach(function (opt) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chip';
+    b.textContent = opt[1];
+    b.onclick = function () { setLimit(opt[0], opt[1] + ' limit'); };
+    row.appendChild(b);
+  });
+  var label = document.createElement('span');
+  label.className = 'chip-label';
+  label.textContent = 'meter / permit limit';
+  row.appendChild(label);
 }
 
 /* --------------------------------------------------------------------- map */
@@ -540,6 +908,10 @@ function cityFor(lon, lat) {
   return null;
 }
 
+function coverageNames() {
+  return CITIES.map(function (c) { return c.name; }).join(' and ');
+}
+
 function locate() {
   /* An NFC sticker on the car opens this URL. ?nfc=1 means "I just parked":
      stamp the time and go straight to locating, no taps. */
@@ -574,9 +946,16 @@ function onGeoError(err) {
 function onPosition(pos) {
   var lon = pos.coords.longitude, lat = pos.coords.latitude;
   lastFix = [lon, lat];
+  lastFixDetail = {
+    lon: lon, lat: lat,
+    accuracy: pos.coords.accuracy,
+    heading: pos.coords.heading,
+    speed: pos.coords.speed
+  };
   var city = cityFor(lon, lat);
   if (!city) {
-    setStatus('You are outside Berkeley and Oakland.', 'error');
+    setStatus('No data for where you are. Covered so far: ' + coverageNames() + '.',
+              'error');
     return;
   }
   setStatus('Loading ' + city.id + '…');
@@ -605,8 +984,15 @@ function onPosition(pos) {
       $('status').hidden = true;
       $('detail').hidden = false;
       $('vintage').textContent = city.vintage + ' Schedules can change without the data changing.';
+      /* Guess the side, but only ever as a question. */
+      if (!placed && lastFixDetail) {
+        suggestion = inferSide(lastFixDetail);
+        if (suggestion) chosen = suggestion.index;
+      }
       renderStage();
       showParkedStamp();
+      renderRecall();
+      startTicking();
     })
     .catch(function () { setStatus('Could not load sweeping data.', 'error'); });
 }
@@ -676,4 +1062,15 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch(function () {});
 }
 
-locate();
+/* Manifest first: it decides which cities exist and which file to pull. */
+fetch('data/cities.json')
+  .then(function (r) { return r.json(); })
+  .then(function (m) { CITIES = m.cities || []; })
+  .catch(function () { CITIES = []; })
+  .then(function () {
+    if (!CITIES.length) {
+      setStatus('Could not load coverage data.', 'error');
+      return;
+    }
+    locate();
+  });

@@ -1,0 +1,30 @@
+{
+ "cities": [
+  {
+   "bbox": [
+    -122.328,
+    37.845,
+    -122.234,
+    37.906
+   ],
+   "file": "data/berkeley.json",
+   "id": "berkeley",
+   "name": "Berkeley",
+   "segments": 1500,
+   "vintage": "City schedule published March 2022."
+  },
+  {
+   "bbox": [
+    -122.355,
+    37.632,
+    -122.114,
+    37.885
+   ],
+   "file": "data/oakland.json",
+   "id": "oakland",
+   "name": "Oakland",
+   "segments": 9867,
+   "vintage": "City data last edited June 2021."
+  }
+ ]
+}

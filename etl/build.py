@@ -281,6 +281,23 @@ def build_berkeley():
     return segs
 
 
+# One entry per city. Adding a city is a row here plus a builder -- the frontend
+# reads this and never hardcodes a place name, so coverage grows without
+# touching the app.
+CITIES = {
+    'berkeley': {
+        'name': 'Berkeley',
+        'bbox': [-122.328, 37.845, -122.234, 37.906],
+        'vintage': 'City schedule published March 2022.',
+    },
+    'oakland': {
+        'name': 'Oakland',
+        'bbox': [-122.355, 37.632, -122.114, 37.885],
+        'vintage': 'City data last edited June 2021.',
+    },
+}
+
+
 def main():
     os.makedirs(DATA, exist_ok=True)
     summary = {}
@@ -298,6 +315,17 @@ def main():
               % (path, len(active), size / 1e6), file=sys.stderr)
     with open(os.path.join(DATA, 'meta.json'), 'w') as fh:
         json.dump(summary, fh, indent=1, sort_keys=True)
+
+    manifest = []
+    for city, info in sorted(CITIES.items()):
+        entry = dict(info)
+        entry['id'] = city
+        entry['file'] = 'data/%s.json' % city
+        entry['segments'] = summary.get(city, {}).get('segments', 0)
+        manifest.append(entry)
+    with open(os.path.join(DATA, 'cities.json'), 'w') as fh:
+        json.dump({'cities': manifest}, fh, indent=1, sort_keys=True)
+    print('  wrote cities.json: %d cities' % len(manifest), file=sys.stderr)
 
 
 if __name__ == '__main__':

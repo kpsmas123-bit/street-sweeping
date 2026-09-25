@@ -10,7 +10,7 @@
 <title>Street Sweeping</title>
 <link rel="manifest" href="manifest.json">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.css">
-<link rel="stylesheet" href="style.css?v=12">
+<link rel="stylesheet" href="style.css?v=13">
 </head>
 <body>
 
@@ -71,15 +71,21 @@
   <section id="panel" class="panel" aria-live="polite">
     <div id="status" class="status" role="status">Finding your spot…</div>
 
+    <div id="recall" class="recall" hidden></div>
+
     <div id="detail" class="detail" hidden>
       <h1 id="street">—</h1>
       <p id="prompt" class="prompt">Tap the kerb your car is on.</p>
+
+      <div id="confirm" class="confirm" hidden></div>
 
       <div id="verdict" class="verdict" hidden>
         <p id="headline" class="headline">—</p>
         <p id="sub" class="sub"></p>
         <p id="note" class="note" hidden></p>
       </div>
+
+      <div id="limits" class="limits" hidden></div>
 
       <div class="actions">
         <button id="remind" class="btn btn--primary" type="button" hidden>Remind me</button>
@@ -104,6 +110,6 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.js"></script>
-<script src="app.js?v=12"></script>
+<script src="app.js?v=13"></script>
 </body>
 </html>
