@@ -157,6 +157,14 @@ function evaluate(side, now) {
 function describe(side) {
   var days = (side.w || []).map(function (d) { return DAY[d]; });
   var when;
+  /* An unknown kind can still carry a weekday and a window -- Emeryville's
+     "1st or 2nd Thursday" names the day and the hours but not the week. Saying
+     "Schedule unknown" there would throw away most of what the city published. */
+  if (side.k === '?' && days.length) {
+    return days.join(' & ') + (side.t
+      ? ', ' + fmtTime(side.t[0]) + '–' + fmtTime(side.t[1]) : '') +
+      ' · week not stated';
+  }
   if (side.k === 'w') {
     when = days.length === 7 ? 'Every day'
          : days.length > 2 ? days.map(function (d) { return d.slice(0, 3); }).join(', ')
@@ -1484,10 +1492,14 @@ function renderStage() {
     label.setAttribute('data-tone', v.tone);
     label.setAttribute('aria-pressed', String((placed || suggestion) && chosen === i));
     var who = side.d === 'odd' ? 'Odd' : side.d === 'even' ? 'Even'
-            : side.d === 'both' ? 'This block' : 'Side ' + (i === 0 ? 'A' : 'B');
+            : side.d === 'both' ? 'Both sides' : 'Side ' + (i === 0 ? 'A' : 'B');
     var meta = [];
     if (side.a) meta.push(tidyRange(side.a));
     if (side.f) meta.push(FACING[side.f]);
+    /* With no address range and no facing there is nothing on the card but the
+       verdict, so show the schedule itself -- for Emeryville that is the whole
+       of what the city published. */
+    if (!meta.length) meta.push(describe(side));
     label.innerHTML =
       '<span class="kl-side">' + esc(who) + '</span>' +
       (meta.length ? '<span class="kl-meta">' + esc(meta.join(' · ')) + '</span>' : '') +
@@ -1495,12 +1507,11 @@ function renderStage() {
     label.onclick = function () { placeCar(i); };
   });
 
-  /* One kerb recorded. That is NOT the same as one kerb existing: Oakland's
-     major streets are digitised as two lines, but 164 Berkeley blocks simply
-     have only one side in the data, and 38 of those cannot even name it. Auto
-     placing the car there asserted a side the data never established, and wrote
-     a parked session the driver never created. Say what is known and let them
-     confirm. */
+  /* One entry. That is NOT the same as one kerb existing: Oakland's major
+     streets are digitised as two lines, 164 Berkeley blocks simply have only
+     one side recorded, and Emeryville records no sides at all -- one schedule
+     covering the whole block. Auto-placing the car for any of these asserted a
+     side the data never established. Say what is known and let them confirm. */
   if (current.s.length < 2) {
     $('labelB').hidden = true;
     $('kerbB').setAttribute('data-tone', 'muted');
@@ -1640,7 +1651,9 @@ function renderVerdict() {
     $('permit').hidden = true;
     $('prompt').textContent = current.s.length > 1
       ? 'Tap the kerb your car is on. Check the nearest house number.'
-      : 'One kerb on this block.';
+      : (current.s[0] && current.s[0].d === 'both'
+          ? 'One schedule covers both sides of this block. Tap to confirm.'
+          : 'Only one kerb is recorded here. Tap to confirm.');
     $('remind').hidden = true;
     return;
   }
@@ -1654,7 +1667,7 @@ function renderVerdict() {
 
   $('prompt').textContent = (side.d === 'odd' || side.d === 'even'
       ? side.d.charAt(0).toUpperCase() + side.d.slice(1) + ' side'
-      : 'This kerb') +
+      : side.d === 'both' ? 'Both sides of this block' : 'This kerb') +
     (side.a ? ' · ' + tidyRange(side.a) : '') +
     (side.f ? ' · faces ' + FACING[side.f] : '');
 
@@ -1672,7 +1685,7 @@ function renderVerdict() {
     $('sub').textContent = r.detail + ' ' + describe(side) + '.';
   }
 
-  var note = NOTES[side.c];
+  var note = side.x || NOTES[side.c];
   $('note').hidden = !note;
   if (note) $('note').textContent = note;
   $('remind').hidden = !icsRule(side);

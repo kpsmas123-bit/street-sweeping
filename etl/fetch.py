@@ -16,6 +16,8 @@ RAW = os.path.join(os.path.dirname(__file__), '..', 'raw')
 BERKELEY = 'https://gis.cityofberkeley.info/arcgis/rest/services/Public/Portal_CommSvcs/MapServer'
 OAKLAND = ('https://services.arcgis.com/9tC74aDHuml0x5Yz/arcgis/rest/services'
            '/StreetSweeping/FeatureServer/0')
+EMERYVILLE = ('https://services3.arcgis.com/ljOdqLVbHpS7dOJQ/arcgis/rest/services'
+              '/Street_Sweeping_Routes_Authoritative_view/FeatureServer/0')
 
 
 def _get(url, params, tries=4):
@@ -67,6 +69,9 @@ def main():
          'OBJECTID,STR_NAM,STR_TYP,mech_sweep,Route,Opt_In_Stage,PARKING,LANES,'
          'F_ADDR,T_ADDR,F_ADDL,T_ADDL'),
         ('berkeley_l7.json', BERKELEY + '/7', 'Route,SUM_length,LengthM,No_of_Maps'),
+        ('emeryville.json', EMERYVILLE,
+         'OBJECTID,RouteType,RouteClass,StreetName,Period,DayOfMonth,DayOfWeek,'
+         'TimeOfDay,Notes'),
     ]
     for name, url, fields in jobs:
         print('  fetching %s' % name, file=sys.stderr)

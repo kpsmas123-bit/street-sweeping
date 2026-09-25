@@ -4,6 +4,11 @@
   "dropped_no_schedule": 1601,
   "segments": 1500
  },
+ "emeryville": {
+  "bytes": 75526,
+  "dropped_no_schedule": 0,
+  "segments": 414
+ },
  "oakland": {
   "bytes": 2597948,
   "dropped_no_schedule": 13475,

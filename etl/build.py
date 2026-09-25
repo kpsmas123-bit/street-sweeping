@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import normalize_berkeley as BK        # noqa: E402
 import rpp as RPP                      # noqa: E402
 import rpp_oakland as OAKRPP           # noqa: E402
+import normalize_emeryville as EM      # noqa: E402
 import normalize_oakland as OAK        # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -199,6 +200,8 @@ def pack_side(side):
         out['a'] = '%s-%s' % (lo, hi)
     if side.get('compass'):
         out['f'] = side['compass']      # facing: N/E/S/W
+    if side.get('note'):
+        out['x'] = side['note']         # what the city would not commit to
     return out
 
 
@@ -222,7 +225,11 @@ def pack(seg):
 
 
 def has_any_schedule(seg):
-    return any(s['schedule']['kind'] in ('weekly', 'nth_weekday') for s in seg['sides'])
+    """Worth shipping if any side either has a real schedule, or has something
+    specific to say about why it hasn't one. Dropping the latter would report
+    "no data" for a street that is definitely swept."""
+    return any(s['schedule']['kind'] in ('weekly', 'nth_weekday') or s.get('note')
+               for s in seg['sides'])
 
 
 def load_oakland_rpp():
@@ -362,6 +369,11 @@ CITIES = {
         'bbox': [-122.355, 37.632, -122.114, 37.885],
         'vintage': 'City data last edited June 2021.',
     },
+    'emeryville': {
+        'name': 'Emeryville',
+        'bbox': [-122.312, 37.826, -122.276, 37.853],
+        'vintage': 'City data last edited August 2024.',
+    },
 }
 
 
@@ -410,11 +422,31 @@ def write_tiles(city, packed):
     return sorted('%d_%d' % k for k in buckets)
 
 
+def build_emeryville():
+    raw = json.load(open(os.path.join(RAW, 'emeryville.json')))
+    segs = []
+    for f in raw:
+        path = longest_path(f.get('geometry'))
+        if not path:
+            continue
+        seg = EM.normalize(f['attributes'],
+                           {'type': 'LineString',
+                            'coordinates': _round(simplify(path))})
+        if seg:
+            segs.append(add_compass(seg))
+    told = sum(1 for s in segs if s['sides'][0].get('note'))
+    print('  emeryville: %d features -> %d segments (%d with an unstated week)'
+          % (len(raw), len(segs), told), file=sys.stderr)
+    return segs
+
+
 def main():
     os.makedirs(DATA, exist_ok=True)
     summary = {}
     tile_keys = {}
-    for city, segs in (('oakland', build_oakland()), ('berkeley', build_berkeley())):
+    for city, segs in (('oakland', build_oakland()),
+                       ('berkeley', build_berkeley()),
+                       ('emeryville', build_emeryville())):
         active = [s for s in segs if has_any_schedule(s)]
         payload = {'city': city, 'segments': [pack(s) for s in active]}
         path = os.path.join(DATA, '%s.json' % city)
