@@ -41,8 +41,25 @@ def nth_weekday_of_month(year, month, weekday, n):
         return None
 
 
+def spans_midnight(sched):
+    """A window like 20:00-05:00 runs into the next morning.
+
+    Emeryville sweeps 8pm-5am on some routes. Treating that as a same-day range
+    makes it never active: 02:00 is neither >= 20:00 nor within a 20:00-05:00
+    comparison done naively. The window belongs to the day it STARTS on, so
+    2am Tuesday is Monday's sweep still running.
+    """
+    if not sched.get('start') or not sched.get('end'):
+        return False
+    return sched['end'] < sched['start']
+
+
 def occurs_on(sched, d):
-    """Does `sched` sweep on date `d`? Holidays are applied separately."""
+    """Does `sched` START on date `d`? Holidays are applied separately.
+
+    For an overnight window this is the evening it begins, not the morning it
+    finishes -- callers wanting "is it active now" must also check yesterday.
+    """
     kind = sched['kind']
     if kind in ('none', 'unknown'):
         return False

@@ -112,6 +112,12 @@ function minutes(hhmm) {
 }
 
 /* Is the sweeper here right now, and if not, when? */
+/* A window like 20:00-05:00 runs into the next morning. It belongs to the day it
+   starts on, so 2am Tuesday is Monday's sweep still running. */
+function spansMidnight(side) {
+  return !!(side.t && minutes(side.t[1]) < minutes(side.t[0]));
+}
+
 function evaluate(side, now) {
   var hasWindow = !!side.t;
   var todayIsSweep = occursOn(side, now) && !isHoliday(now);
@@ -120,8 +126,24 @@ function evaluate(side, now) {
   }
   var nowMin = now.getHours() * 60 + now.getMinutes();
 
+  /* An overnight sweep that began yesterday evening is still running this
+     morning, and yesterday is the day that has to be checked for it. */
+  if (hasWindow && spansMidnight(side) && nowMin < minutes(side.t[1])) {
+    var y = new Date(now);
+    y.setDate(y.getDate() - 1);
+    if (occursOn(side, y) && !isHoliday(y)) {
+      return { state: 'active', end: side.t[1] };
+    }
+  }
+
   if (todayIsSweep && hasWindow) {
     var start = minutes(side.t[0]), end = minutes(side.t[1]);
+    if (spansMidnight(side)) {
+      /* Tonight's window: active once it starts, otherwise still ahead today. */
+      if (nowMin >= start) return { state: 'active', end: side.t[1] };
+      return { state: 'today', start: side.t[0], end: side.t[1],
+               minsAway: start - nowMin };
+    }
     if (nowMin >= start && nowMin < end) return { state: 'active', end: side.t[1] };
     if (nowMin < start) return { state: 'today', start: side.t[0], end: side.t[1],
                                  minsAway: start - nowMin };
@@ -1068,6 +1090,7 @@ function renderPermit() {
    at a spot feels like arriving somewhere, rather than a diagram appearing.
    Runs once per block, and never when the system asks for reduced motion. */
 var flyRaf = null;
+var carArrival = 0;      /* metres-ish of approach left to travel, during fly-in */
 
 function easeOutQuint(t) { return 1 - Math.pow(1 - t, 5); }
 function easeOutBack(t) {
@@ -1109,10 +1132,13 @@ function flyIn() {
       'scale(' + scale.toFixed(3) + ') ' +
       'translate(' + (-cx) + ' ' + (-cy) + ')');
 
-    if (t > 0.55 && car) {
-      var ct = Math.min(1, (t - 0.55) / 0.45);
-      car.style.opacity = String(ct);
-      car.style.setProperty('--drop', (1 - easeOutBack(ct)).toFixed(3));
+    if (t > 0.45 && car) {
+      var ct = Math.min(1, (t - 0.45) / 0.55);
+      car.style.opacity = String(Math.min(1, ct * 1.6));
+      /* Arrive along the street, overshoot a touch, settle -- a car pulling in
+         rather than a marker being dropped. */
+      carArrival = (1 - easeOutBack(ct)) * 120;
+      moveCar();
     }
     if (t > 0.7) {
       var kt = Math.min(1, (t - 0.7) / 0.3);
@@ -1126,7 +1152,9 @@ function flyIn() {
       cam.removeAttribute('transform');
       $('kerbA').style.opacity = '';
       $('kerbB').style.opacity = '';
-      if (car) { car.style.opacity = ''; car.style.removeProperty('--drop'); }
+      if (car) car.style.opacity = '';
+      carArrival = 0;
+      moveCar();
       flyRaf = null;
     }
   }
@@ -1266,8 +1294,21 @@ function drawScene(lon, lat) {
   current.s.slice(0, 2).forEach(function (side, i) {
     var hand = handOfSide(side, sc.bearing);
     var metres = hand === 'left' ? -HALF_ROAD : HALF_ROAD;
-    $(i === 0 ? 'kerbA' : 'kerbB')
-      .setAttribute('d', pathOf(offsetPath(coords, metres, sc.project)));
+    var el = $(i === 0 ? 'kerbA' : 'kerbB');
+    el.setAttribute('d', pathOf(offsetPath(coords, metres, sc.project)));
+    /* Draw the kerb on rather than switching it on: the colour is the answer,
+       and watching it run the length of the block lands better than a line that
+       was simply already there. */
+    if (el.getTotalLength) {
+      var len = el.getTotalLength();
+      el.style.strokeDasharray = len + ' ' + len;
+      el.style.strokeDashoffset = String(len);
+      requestAnimationFrame(function () {
+        el.style.transition = 'stroke-dashoffset .85s cubic-bezier(.2,.75,.25,1), ' +
+                              'stroke .45s ease, opacity .45s ease';
+        el.style.strokeDashoffset = '0';
+      });
+    }
   });
 
   drawContext(sc);
@@ -1523,8 +1564,13 @@ function moveCar() {
   /* Never shrink the car past readability: on a long block the view zooms out
      far enough that a true-to-scale car becomes a speck. */
   var z = scene ? Math.max(0.8, scene.scale / 5) : 1;
-  car.style.transform = 'translate(' + pos[0].toFixed(1) + 'px, ' +
-                        pos[1].toFixed(1) + 'px) rotate(' + angle.toFixed(1) + 'deg) ' +
+  /* carArrival slides it back down the street during the fly-in, so it drives
+     into the space instead of materialising in it. */
+  var rad = angle * Math.PI / 180;
+  var ax = Math.sin(rad) * -carArrival;
+  var ay = Math.cos(rad) * carArrival;
+  car.style.transform = 'translate(' + (pos[0] + ax).toFixed(1) + 'px, ' +
+                        (pos[1] + ay).toFixed(1) + 'px) rotate(' + angle.toFixed(1) + 'deg) ' +
                         'scale(' + z.toFixed(3) + ')';
   car.classList.toggle('car--placing', !onKerb);
   car.classList.toggle('car--guess', !placed && !!suggestion);
@@ -1556,6 +1602,14 @@ function placeCar(i) {
   chosen = i;
   placed = true;
   suggestion = null;
+  var carEl = $('car');
+  if (carEl) {
+    /* A small hop on landing. Confirming the kerb is the one decision in the
+       whole app, so it should feel like something happened. */
+    carEl.classList.remove('car--land');
+    void carEl.offsetWidth;
+    carEl.classList.add('car--land');
+  }
   try { localStorage.setItem('side:' + current.i, String(i)); } catch (e) {}
   /* The tap is the save -- unless the position came from ?at=, which is a
      testing affordance. Overwriting a real saved spot from a crafted link, on

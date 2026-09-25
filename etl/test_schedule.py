@@ -85,3 +85,31 @@ class NextOccurrences(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class OvernightWindows(unittest.TestCase):
+    """Emeryville sweeps 8pm-5am on some routes; the window belongs to the day
+    it starts on, so 2am Tuesday is Monday's sweep still running."""
+
+    def test_detects_a_window_that_crosses_midnight(self):
+        overnight = S.make('weekly', [], [S.MON], '20:00', '05:00')
+        self.assertTrue(S.spans_midnight(overnight))
+
+    def test_ordinary_window_does_not_span_midnight(self):
+        daytime = S.make('weekly', [], [S.MON], '08:00', '12:00')
+        self.assertFalse(S.spans_midnight(daytime))
+
+    def test_window_starting_at_midnight_does_not_span(self):
+        # Oakland's 00:00-03:00 starts at midnight but ends the same day.
+        oakland = S.make('weekly', [], [S.TUE], '00:00', '03:00')
+        self.assertFalse(S.spans_midnight(oakland))
+
+    def test_missing_times_never_span(self):
+        self.assertFalse(S.spans_midnight(S.make('weekly', [], [S.MON])))
+
+    def test_occurs_on_marks_the_starting_day(self):
+        overnight = S.make('nth_weekday', [1], [S.MON], '20:00', '05:00')
+        # 1st Monday of Sept 2026 is the 7th. The sweep starts that evening and
+        # runs into Tuesday the 8th, but it belongs to Monday.
+        self.assertTrue(S.occurs_on(overnight, date(2026, 9, 7)))
+        self.assertFalse(S.occurs_on(overnight, date(2026, 9, 8)))

@@ -309,3 +309,33 @@ html, body {
   100% { transform: scale(1.5); opacity: 0; }
 }
 @media (prefers-reduced-motion: reduce) { .here::after { animation: none; } }
+
+/* The landing hop. Transform is owned by moveCar, so the squash lives on the
+   car's own shapes instead of fighting it. */
+.car--land .car-body, .car--land .car-glass, .car--land .car-roof {
+  animation: land .5s cubic-bezier(.3, 1.5, .4, 1);
+}
+@keyframes land {
+  0%   { transform: scale(1.22, .8); }
+  55%  { transform: scale(.94, 1.07); }
+  100% { transform: scale(1, 1); }
+}
+
+/* The sweeper leaves the kerb behind it visibly cleaner for a moment. */
+.sweep-dust { filter: blur(1px); }
+
+/* The verdict arrives rather than blinking into place. */
+.headline { animation: verdict .45s cubic-bezier(.2, .8, .25, 1); }
+@keyframes verdict {
+  from { opacity: 0; transform: translateY(8px) scale(.97); }
+}
+
+/* Tapping a kerb label should feel like pressing something. */
+.kerb-label:active { transform: scale(.96); }
+.kerb-label { transition: transform .12s ease, border-color .2s ease; }
+
+@media (prefers-reduced-motion: reduce) {
+  .car--land .car-body, .car--land .car-glass, .car--land .car-roof,
+  .headline { animation: none; }
+  .kerb-label:active { transform: none; }
+}

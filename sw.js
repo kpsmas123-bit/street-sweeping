@@ -1,8 +1,8 @@
 /* Cache the shell and both cities so the app answers with no signal.
    Bump CACHE when the ETL republishes data. */
-var CACHE = 'sweeping-v22';   /* bump on every deploy that moves or renames a file */
+var CACHE = 'sweeping-v23';   /* bump on every deploy that moves or renames a file */
 var ASSETS = [
-  './', './index.html', './app.js?v=22', './style.css?v=22', './manifest.json',
+  './', './index.html', './app.js?v=23', './style.css?v=23', './manifest.json',
   'data/berkeley.json', 'data/oakland.json', 'data/holidays.json', 'data/cities.json',
   'https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.js',
   'https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.css'
