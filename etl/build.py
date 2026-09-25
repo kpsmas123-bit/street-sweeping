@@ -298,6 +298,47 @@ CITIES = {
 }
 
 
+# --- spatial tiles ----------------------------------------------------------
+# Oakland is 2.6 MB, which is a slow parse on a phone and the whole point is to
+# answer instantly on an NFC tap. The app only ever needs the blocks within a
+# few hundred metres, so ship a grid: one file per cell, loaded with its eight
+# neighbours. That turns a 2.6 MB parse into roughly 40 kB.
+#
+# The full city file stays for offline use -- the service worker can still cache
+# everything, but the common path no longer pays for it.
+TILE = 0.01      # degrees; ~1.1 km north-south, ~0.9 km east-west at this latitude
+
+
+def tile_key(lon, lat):
+    return (int(math.floor(lon / TILE)), int(math.floor(lat / TILE)))
+
+
+def write_tiles(city, packed):
+    out = os.path.join(DATA, 'tiles', city)
+    if os.path.isdir(out):
+        for name in os.listdir(out):
+            os.remove(os.path.join(out, name))
+    os.makedirs(out, exist_ok=True)
+
+    buckets = {}
+    for seg in packed:
+        # A block can straddle a cell boundary, so file it under every cell any
+        # of its vertices falls in -- a segment missing from the cell you are
+        # standing in is a block the app cannot answer for.
+        for lon, lat in seg['g']:
+            buckets.setdefault(tile_key(lon, lat), {})[seg['i']] = seg
+
+    for (tx, ty), segs in buckets.items():
+        name = '%d_%d.json' % (tx, ty)
+        with open(os.path.join(out, name), 'w') as fh:
+            json.dump({'segments': list(segs.values())}, fh, separators=(',', ':'))
+
+    sizes = [os.path.getsize(os.path.join(out, f)) for f in os.listdir(out)]
+    print('  %s tiles: %d files, median %.0f kB, max %.0f kB'
+          % (city, len(sizes), sorted(sizes)[len(sizes) // 2] / 1000.0,
+             max(sizes) / 1000.0), file=sys.stderr)
+
+
 def main():
     os.makedirs(DATA, exist_ok=True)
     summary = {}
@@ -308,6 +349,7 @@ def main():
         with open(path, 'w') as fh:
             json.dump(payload, fh, separators=(',', ':'))
         size = os.path.getsize(path)
+        write_tiles(city, payload['segments'])
         summary[city] = {'segments': len(active),
                          'dropped_no_schedule': len(segs) - len(active),
                          'bytes': size}
@@ -317,6 +359,7 @@ def main():
         json.dump(summary, fh, indent=1, sort_keys=True)
 
     manifest = []
+    # Tell the app the grid size so it can compute the cell itself.
     for city, info in sorted(CITIES.items()):
         entry = dict(info)
         entry['id'] = city
@@ -324,7 +367,7 @@ def main():
         entry['segments'] = summary.get(city, {}).get('segments', 0)
         manifest.append(entry)
     with open(os.path.join(DATA, 'cities.json'), 'w') as fh:
-        json.dump({'cities': manifest}, fh, indent=1, sort_keys=True)
+        json.dump({'cities': manifest, 'tile': TILE}, fh, indent=1, sort_keys=True)
     print('  wrote cities.json: %d cities' % len(manifest), file=sys.stderr)
 
 

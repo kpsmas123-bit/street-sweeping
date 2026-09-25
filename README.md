@@ -205,6 +205,22 @@ honestly do. Which kerb it sits on is still your tap — the two kerbs are 8–1
 apart and a phone fix is 3–30 m. The car waits in the middle of the road until
 you place it, so there is never a default answer to be wrong about.
 
+## Payload
+
+The full city files are 2.6 MB (Oakland) and 0.4 MB (Berkeley) — too slow to
+parse on a phone when the whole promise is an instant answer on an NFC tap.
+
+`data/tiles/<city>/<x>_<y>.json` is a 0.01° grid, about 1.1 km × 0.9 km per
+cell: 105 cells for Oakland, median 30 kB. The app loads the cell you are
+standing in and nothing else. Neighbours are fetched only when the nearest block
+in that cell is more than 60 m away, which usually means the answer is across a
+boundary. Blocks straddling a boundary are filed under every cell they touch, so
+a cell is never missing a block you could be standing on.
+
+The whole-city files stay, for two reasons: the service worker pre-caches them
+so the app works offline in a cell never visited, and they are the fallback when
+a tile fetch finds nothing.
+
 ## Deploying
 
 GitHub Pages serves every file with `Cache-Control: max-age=600`, so a returning

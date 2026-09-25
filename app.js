@@ -467,6 +467,46 @@ function startTicking() {
   }, 30000);
 }
 
+/* ------------------------------------------------------------------- tiles */
+var TILE = 0.01;
+var tileCache = {};
+
+function tileName(lon, lat) {
+  return Math.floor(lon / TILE) + '_' + Math.floor(lat / TILE);
+}
+
+function fetchTile(city, tx, ty) {
+  var key = city.id + '/' + tx + '_' + ty;
+  if (tileCache[key]) return tileCache[key];
+  tileCache[key] = fetch('data/tiles/' + city.id + '/' + tx + '_' + ty + '.json')
+    .then(function (r) { return r.ok ? r.json() : { segments: [] }; })
+    .then(function (d) { return d.segments || []; })
+    .catch(function () { return []; });      /* a missing cell is empty, not fatal */
+  return tileCache[key];
+}
+
+function loadTiles(city, lon, lat, withNeighbours) {
+  var tx = Math.floor(lon / TILE), ty = Math.floor(lat / TILE);
+  var want = [[tx, ty]];
+  if (withNeighbours) {
+    for (var dx = -1; dx <= 1; dx++) {
+      for (var dy = -1; dy <= 1; dy++) {
+        if (dx || dy) want.push([tx + dx, ty + dy]);
+      }
+    }
+  }
+  return Promise.all(want.map(function (t) { return fetchTile(city, t[0], t[1]); }))
+    .then(function (lists) {
+      var seen = {}, out = [];
+      lists.forEach(function (list) {
+        list.forEach(function (seg) {
+          if (!seen[seg.i]) { seen[seg.i] = 1; out.push(seg); }
+        });
+      });
+      return out;
+    });
+}
+
 /* ------------------------------------------------------------- better fixes */
 /* Apple Maps knows the side because it has the whole drive -- hundreds of fixes
    fused with the accelerometer and gyro, map-matched to the road. One
@@ -1064,31 +1104,57 @@ function onPosition(pos) {
               'error');
     return;
   }
-  setStatus('Loading ' + city.id + '…');
+  setStatus('Loading ' + city.name + '…');
   cityId = city.id;
+
+  /* Load the grid cell you are standing in, not the whole city. Oakland's full
+     file is 2.6 MB, which is a slow parse on a phone, and an NFC tap should
+     answer immediately. One cell is ~30 kB. Neighbours are fetched only if the
+     nearest block in this cell is far enough away that the real answer is
+     probably across a boundary. */
   Promise.all([
-    fetch(city.file).then(function (r) { return r.json(); }),
+    loadTiles(city, lon, lat),
     fetch('data/holidays.json').then(function (r) { return r.json(); })
                                .catch(function () { return null; })
   ])
     .then(function (both) {
-      var payload = both[0];
       holidays = both[1] ? both[1][city.id] : null;
-      segments = payload.segments;
+      segments = both[0];
       var hit = nearestSegment(lon, lat);
+
+      if (!hit || hit.distance > 60) {
+        /* Either nothing here or the match is suspiciously far: widen once. */
+        return loadTiles(city, lon, lat, true).then(function (more) {
+          segments = more;
+          var wider = nearestSegment(lon, lat);
+          if (wider) return wider;
+          /* Offline with this cell never visited, but the whole-city file may
+             still be in the cache from install. Falling back beats telling
+             someone there is no data when there is. */
+          return fetch(city.file)
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+              segments = d.segments || [];
+              return nearestSegment(lon, lat);
+            })
+            .catch(function () { return null; });
+        });
+      }
+      return hit;
+    })
+    .then(function (hit) {
       if (!hit) { setStatus('No sweeping data near you.', 'error'); return; }
       current = hit.segment;
       chosen = 0;
       placed = false;
       suggestion = null;
       rememberedSide = null;
-      /* A remembered side is history, not evidence. Parking on the other side
-         next time is completely normal, so restoring it as confirmed would
-         quietly assert a stale answer -- the same shape as the bug that put
-         someone on the wrong kerb. It comes back only as a suggestion.
 
-         The exception is a live session: same block, placed within the last few
-         hours, which is the same car still sitting where it was put. */
+      /* A remembered side is history, not evidence. Parking on the other side
+         next time is normal, so restoring it as confirmed would quietly assert
+         a stale answer -- the shape of the bug that put someone on the wrong
+         kerb. Only a live session (same block, placed in the last 12 hours) is
+         the same car still sitting where it was put. */
       var live = loadSession();
       if (live && live.segId === current.i && current.s[live.side] &&
           Date.now() - live.at < 1000 * 60 * 60 * 12) {
@@ -1097,19 +1163,12 @@ function onPosition(pos) {
       } else {
         try {
           var saved = localStorage.getItem('side:' + current.i);
-          if (saved !== null && current.s[+saved]) {
-            rememberedSide = +saved;
-          }
+          if (saved !== null && current.s[+saved]) rememberedSide = +saved;
         } catch (e) {}
       }
-      setStatus(null);
-      $('status').hidden = true;
-      $('detail').hidden = false;
-      $('vintage').textContent = city.vintage + ' Schedules can change without the data changing.';
+
       /* Guess the side, but only ever as a question. */
-      if (!placed && lastFixDetail) {
-        suggestion = inferSide(lastFixDetail);
-      }
+      if (!placed && lastFixDetail) suggestion = inferSide(lastFixDetail);
       if (!placed && !suggestion && rememberedSide !== null) {
         suggestion = {
           index: rememberedSide,
@@ -1118,6 +1177,12 @@ function onPosition(pos) {
         };
       }
       if (suggestion) chosen = suggestion.index;
+
+      setStatus(null);
+      $('status').hidden = true;
+      $('detail').hidden = false;
+      $('vintage').textContent = city.vintage +
+        ' Schedules can change without the data changing.';
       renderStage();
       showParkedStamp();
       renderRecall();
