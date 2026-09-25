@@ -190,6 +190,21 @@ correction often keeps the row count identical.
 - No enforcement-vs-sweeping distinction: a swept street may still be ticketed,
   and vice versa.
 
+## The NFC sticker
+
+A cheap NTAG213 sticker on the door pillar, written with any NFC writer app to:
+
+    https://kpsmas123-bit.github.io/street-sweeping/?nfc=1
+
+Tap the phone to it as you walk away. `nfc=1` means "I just parked": it stamps
+the time so the app can tell you how long the car has been there, then goes
+straight to locating. No unlock-and-hunt-for-the-app.
+
+The overhead view puts the car on the block from GPS, which is all GPS can
+honestly do. Which kerb it sits on is still your tap — the two kerbs are 8–10 m
+apart and a phone fix is 3–30 m. The car waits in the middle of the road until
+you place it, so there is never a default answer to be wrong about.
+
 ## Deploying
 
 GitHub Pages serves every file with `Cache-Control: max-age=600`, so a returning

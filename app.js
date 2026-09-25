@@ -154,62 +154,15 @@ function fmtDate(d, now) {
   if (days === 1) return 'tomorrow';
   /* Never a bare weekday name: "Monday" for a sweep six days out reads like the
      Monday coming up in a day or two, which is how people get ticketed. */
-  return DAY[d.getDay()] + ' ' + (d.getMonth() + 1) + '/' + d.getDate() +
-         (days <= 14 ? ' (' + days + ' days)' : '');
+  return DAY[d.getDay()] + ' ' + (d.getMonth() + 1) + '/' + d.getDate();
 }
 
 
 
-
-/* ----------------------------------------------------------- bottom sheet */
-/* The grabber looked draggable and did nothing. Now it is: drag or tap it to
-   slide the sheet down to a peek -- street, side and verdict stay on screen --
-   which uncovers the full-bleed map underneath so you can see the whole block
-   and the surrounding streets. */
-var sheetY = 0;          /* current translateY, px */
-var detents = [0];       /* stops, ascending: 0 is fully open */
-var mapOffset = 0;       /* px already panned to compensate for the sheet */
-
-function sheetEl() { return $('sheet'); }
-function peekLimit() { return detents[detents.length - 1]; }
-
-function measureDetents() {
-  var sheet = sheetEl();
-  var verdict = document.querySelector('.verdict');
-  var head = document.querySelector('.sheet-head');
-  if (!sheet || !verdict || !head) return;
-  var h = sheet.offsetHeight;
-  /* Three stops, the way an iOS sheet does it:
-       open    everything
-       peek    down to the end of the verdict -- the answer, still readable
-       minimal just the handle and the street name, so the map is effectively full
-     Minimal is the point of dragging down at all: it uncovers the whole block
-     and the streets around it. */
-  var peek = Math.max(0, h - (verdict.offsetTop + verdict.offsetHeight + 12));
-  var minimal = Math.max(0, h - (head.offsetTop + head.offsetHeight + 14));
-  detents = [0, peek, minimal].filter(function (v, i, a) {
-    return i === 0 || v - a[i - 1] > 24;      /* drop stops too close to be distinct */
-  });
-}
-
-function setSheetY(y, animate) {
-  var sheet = sheetEl();
-  sheetY = Math.max(0, Math.min(peekLimit(), y));
-  sheet.classList.toggle('snapping', !!animate);
-  sheet.style.setProperty('--y', sheetY + 'px');
-  var open = sheetY < 1;
-  $('handle').setAttribute('aria-expanded', String(open));
-  $('handle').setAttribute('aria-label',
-    open ? 'Collapse details to see the map' : 'Expand details');
-  syncMapToSheet();
-}
 
 /* Does the map have a transform that can be panned? Not "is the style loaded":
    painting the block calls setData first, which puts the geojson sources back
-   into a loading state, so isStyleLoaded() is false for the rest of the load
-   handler -- and gating on it silently skipped the pan, leaving the block
-   centred in the full-bleed map and therefore hidden behind the sheet. What
-   panBy actually needs is a sized canvas and a finite centre. */
+   into a loading state. */
 function mapReady() {
   if (!map) return false;
   try {
@@ -220,109 +173,6 @@ function mapReady() {
   } catch (err) {
     return false;
   }
-}
-
-/* Keep the block centred in whatever map area the sheet is not covering. */
-function syncMapToSheet() {
-  if (!mapReady()) return;
-  var want = (sheetEl().offsetHeight - sheetY) / 2;
-  var delta = want - mapOffset;
-  if (Math.abs(delta) < 1) return;
-  try {
-    map.panBy([0, delta], { duration: 0 });
-    mapOffset = want;
-  } catch (err) {
-    /* Transform not ready yet; the load handler will re-apply. */
-  }
-}
-
-function snap(velocity) {
-  var i = nearestDetent(sheetY);
-  /* A deliberate flick carries to the next stop even if the finger barely moved,
-     which is how these are expected to feel. */
-  if (velocity > 0.5) i = Math.min(detents.length - 1, i + 1);
-  else if (velocity < -0.5) i = Math.max(0, i - 1);
-  setSheetY(detents[i], true);
-}
-
-function nearestDetent(y) {
-  var best = 0;
-  for (var i = 1; i < detents.length; i++) {
-    if (Math.abs(detents[i] - y) < Math.abs(detents[best] - y)) best = i;
-  }
-  return best;
-}
-
-/* Tap and keyboard cycle open -> peek -> minimal -> open. */
-function cycleDetent() {
-  measureDetents();
-  var next = (nearestDetent(sheetY) + 1) % detents.length;
-  setSheetY(detents[next], true);
-}
-
-function initSheetDrag() {
-  var handle = $('handle');
-  var startY = 0, startSheetY = 0, lastY = 0, lastT = 0, velocity = 0, dragging = false;
-
-  handle.addEventListener('pointerdown', function (e) {
-    measureDetents();
-    dragging = true;
-    startY = lastY = e.clientY;
-    lastT = e.timeStamp;
-    startSheetY = sheetY;
-    velocity = 0;
-    sheetEl().classList.remove('snapping');
-    handle.setPointerCapture(e.pointerId);
-  });
-
-  handle.addEventListener('pointermove', function (e) {
-    if (!dragging) return;
-    e.preventDefault();
-    var dt = e.timeStamp - lastT;
-    if (dt > 0) velocity = (e.clientY - lastY) / dt;
-    lastY = e.clientY;
-    lastT = e.timeStamp;
-    setSheetY(startSheetY + (e.clientY - startY), false);
-  });
-
-  function end(e) {
-    if (!dragging) return;
-    dragging = false;
-    try { handle.releasePointerCapture(e.pointerId); } catch (err) {}
-    /* A tap (barely moved) toggles, which is what people try before dragging. */
-    if (Math.abs(lastY - startY) < 4) {
-      cycleDetent();
-    } else {
-      snap(velocity);
-    }
-  }
-  handle.addEventListener('pointerup', end);
-  handle.addEventListener('pointercancel', end);
-
-  handle.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      cycleDetent();
-    }
-  });
-
-  function relayout() {
-    var i = nearestDetent(sheetY);
-    measureDetents();
-    setSheetY(detents[Math.min(i, detents.length - 1)], false);
-    /* A map built while the page had no size keeps a zero-sized canvas and
-       never draws -- which happens when the PWA is launched into the background
-       or the tab is restored. Re-measuring it is what brings it back. */
-    if (map) {
-      map.resize();
-      syncMapToSheet();
-    }
-  }
-  window.addEventListener('resize', relayout);
-  window.addEventListener('orientationchange', relayout);
-  document.addEventListener('visibilitychange', function () {
-    if (document.visibilityState === 'visible') relayout();
-  });
 }
 
 /* --------------------------------------------------------------- compass */
@@ -353,6 +203,7 @@ function onHeading(e) {
   var side = current && current.s[chosen];
   var hint = $('facing');
   if (!hint) return;
+  hint.hidden = false;
   var names = ['north', 'north-east', 'east', 'south-east',
                'south', 'south-west', 'west', 'north-west'];
   /* "your side faces north" was read as "you are on the north side". Name the
@@ -369,7 +220,8 @@ function startCompass() {
     window.addEventListener('deviceorientationabsolute', onHeading, true);
     window.addEventListener('deviceorientation', onHeading, true);
     compassOn = true;
-    $('compass').hidden = false;
+    $('compassRose').hidden = false;
+    $('facing').hidden = false;
     $('showcompass').hidden = true;
   };
   var DOE = window.DeviceOrientationEvent;
@@ -518,53 +370,112 @@ var NOTES = {
    street whose two sides sweep on different days, and Parker St's do: odd on
    the 2nd Wednesday, even on the 2nd Tuesday. Showing one answer for an
    unconfirmed side is how you end up on the wrong curb. */
-function renderSides() {
-  var wrap = $('sides');
+/* ------------------------------------------------------------------ stage */
+/* An overhead view of the block with your car on it. GPS puts the car on the
+   street -- that much it can do. Which kerb it sits on is still a tap, because
+   the two kerbs are 8-10 m apart and a phone fix is 3-30 m, and guessing that is
+   what once sent someone to the wrong side. Here the guess is not even
+   available: the car waits in the middle of the road until you place it. */
+var placed = false;
+
+/* Screen x of each kerb, matching the SVG. */
+var KERB_X = [124, 236];
+
+function toneOf(side, now) { return verdictFor(side, now).tone; }
+
+function renderStage() {
   var now = new Date();
-  wrap.innerHTML = '';
+  var scene = $('scene');
+  drawCrossStreets();
 
   current.s.forEach(function (side, i) {
+    if (i > 1) return;
     var v = verdictFor(side, now);
-    var card = document.createElement('button');
-    card.type = 'button';
-    card.className = 'side-card';
-    card.setAttribute('aria-pressed', String(i === chosen));
+    var kerb = $(i === 0 ? 'kerbA' : 'kerbB');
+    kerb.setAttribute('data-tone', v.tone);
+    kerb.setAttribute('data-active', String(placed && chosen === i));
 
+    var label = $(i === 0 ? 'labelA' : 'labelB');
+    label.hidden = false;
+    label.setAttribute('data-tone', v.tone);
+    label.setAttribute('aria-pressed', String(placed && chosen === i));
     var who = side.d === 'odd' ? 'Odd' : side.d === 'even' ? 'Even'
             : side.d === 'both' ? 'This block' : 'Side ' + (i === 0 ? 'A' : 'B');
-    var bits = [];
-    if (side.a) bits.push(side.a);
-    if (side.f) bits.push(FACING[side.f] + ' side');
-
-    card.innerHTML =
-      '<span class="side-top">' +
-        '<span class="swatch" style="background:' + SIDE_COLOR[i] + '"></span>' +
-        '<span class="side-who">' + who + '</span>' +
-        (bits.length ? '<span class="side-bits">' + bits.join(' · ') + '</span>' : '') +
-      '</span>' +
-      '<span class="side-verdict" data-tone="' + v.tone + '">' + v.headline + '</span>' +
-      '<span class="side-detail">' + v.detail + '</span>' +
-      '<span class="side-sched">' + describe(side) + '</span>' +
-      (NOTES[side.c] ? '<span class="side-note">' + NOTES[side.c] + '</span>' : '');
-
-    card.onclick = function () {
-      chosen = i;
-      renderSides();
-      paintSides();
-      measureDetents();
-    };
-    wrap.appendChild(card);
+    var meta = [];
+    if (side.a) meta.push(side.a);
+    if (side.f) meta.push(FACING[side.f]);
+    label.innerHTML =
+      '<span class="kl-side">' + who + '</span>' +
+      (meta.length ? '<span class="kl-meta">' + meta.join(' · ') + '</span>' : '') +
+      '<span class="kl-state">' + v.headline + '</span>';
+    label.onclick = function () { placeCar(i); };
   });
 
-  $('street').textContent = current.n || 'This block';
-  $('addr').textContent = 'Which side are you on? Check the nearest house number.';
+  /* One kerb only (a major street digitised as two lines): nothing to choose. */
+  if (current.s.length < 2) {
+    $('labelB').hidden = true;
+    $('kerbB').setAttribute('data-tone', 'muted');
+    $('kerbB').setAttribute('data-active', 'false');
+    if (!placed) placeCar(0);
+  }
 
+  moveCar();
+  renderVerdict();
+}
+
+function moveCar() {
+  var car = $('car');
+  var x = placed ? KERB_X[Math.min(chosen, 1)] : 180;
+  car.style.transform = 'translate(' + x + 'px, 250px)';
+  car.classList.toggle('car--placing', !placed);
+}
+
+function placeCar(i) {
+  chosen = i;
+  placed = true;
+  try { localStorage.setItem('side:' + current.i, String(i)); } catch (e) {}
+  renderStage();
+  paintSides();
+}
+
+/* Faint cross streets, purely to make the block read as a block. */
+function drawCrossStreets() {
+  var g = $('cross');
+  if (g.childNodes.length) return;
+  [40, 150, 330, 440].forEach(function (y) {
+    var l = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    l.setAttribute('x1', '-20'); l.setAttribute('x2', '380');
+    l.setAttribute('y1', y); l.setAttribute('y2', y);
+    g.appendChild(l);
+  });
+}
+
+function renderVerdict() {
+  $('street').textContent = current.n || 'This block';
+  var v = $('verdict');
+  if (!placed) {
+    v.hidden = true;
+    $('prompt').textContent = current.s.length > 1
+      ? 'Tap the kerb your car is on. Check the nearest house number.'
+      : 'One kerb on this block.';
+    $('remind').hidden = true;
+    return;
+  }
   var side = current.s[chosen];
+  var r = verdictFor(side, new Date());
+  v.hidden = false;
+  $('prompt').textContent = (side.d === 'odd' || side.d === 'even'
+      ? side.d.charAt(0).toUpperCase() + side.d.slice(1) + ' side'
+      : 'This kerb') +
+    (side.a ? ' · ' + side.a : '') + (side.f ? ' · faces ' + FACING[side.f] : '');
+  $('headline').textContent = r.headline;
+  $('headline').dataset.tone = r.tone;
+  $('sub').textContent = r.detail + ' ' + describe(side) + '.';
+  var note = NOTES[side.c];
+  $('note').hidden = !note;
+  if (note) $('note').textContent = note;
   $('remind').hidden = !icsRule(side);
-  $('remind').textContent = 'Add reminder — ' +
-    (side.d === 'odd' || side.d === 'even' ? side.d + ' side' : 'this side');
   $('showcompass').hidden = compassOn || !current.s.some(function (x) { return x.f; });
-  $('compass').hidden = !compassOn;
 }
 
 /* --------------------------------------------------------------------- map */
@@ -630,6 +541,10 @@ function cityFor(lon, lat) {
 }
 
 function locate() {
+  /* An NFC sticker on the car opens this URL. ?nfc=1 means "I just parked":
+     stamp the time and go straight to locating, no taps. */
+  var params = new URLSearchParams(location.search);
+  if (params.get('nfc') === '1') stampParked();
   setStatus('Finding your spot…');
   /* ?at=lon,lat overrides GPS — for testing a block you are not standing on. */
   var at = new URLSearchParams(location.search).get('at');
@@ -658,6 +573,7 @@ function onGeoError(err) {
 
 function onPosition(pos) {
   var lon = pos.coords.longitude, lat = pos.coords.latitude;
+  lastFix = [lon, lat];
   var city = cityFor(lon, lat);
   if (!city) {
     setStatus('You are outside Berkeley and Oakland.', 'error');
@@ -678,51 +594,69 @@ function onPosition(pos) {
       if (!hit) { setStatus('No sweeping data near you.', 'error'); return; }
       current = hit.segment;
       chosen = 0;
+      placed = false;
+      /* If this block was answered before, start the car where it was left --
+         but only for this exact block, and the tap is still what set it. */
+      try {
+        var saved = localStorage.getItem('side:' + current.i);
+        if (saved !== null && current.s[+saved]) { chosen = +saved; placed = true; }
+      } catch (e) {}
       setStatus(null);
+      $('status').hidden = true;
+      $('detail').hidden = false;
       $('vintage').textContent = city.vintage + ' Schedules can change without the data changing.';
-      showMap(lon, lat);
-      $('sheet').hidden = false;
-      renderSides();
-      measureDetents();
-      setSheetY(0, false);
+      renderStage();
+      showParkedStamp();
     })
     .catch(function () { setStatus('Could not load sweeping data.', 'error'); });
 }
 
-function showMap(lon, lat) {
-  /* Centre on the midpoint between the fix and the matched block rather than on
-     the fix alone, so the block sits in the visible strip above the sheet
-     instead of running off the bottom edge. Set at construction time: changing
-     the view from inside the load handler left the map stuck with
-     loaded() === false and only the background painted.
+/* The real map is no longer the main view -- the overhead scene is. It opens on
+   demand to confirm the block, and is built lazily the first time. */
+var lastFix = null;
 
-     Zoom is fixed and tight because the whole job of this map is telling apart
-     two lines about 8 m apart. Zoom out and the offset that distinguishes them
-     collapses; a computed fit-the-block zoom fought that and lost. */
+function showMap() {
+  $('mapwrap').hidden = false;
+  if (map) { map.resize(); return; }
   var g = current.g;
   var mid = g[Math.floor(g.length / 2)];
   map = new maplibregl.Map({
     container: 'map',
     style: baseStyle(),
-    center: [(mid[0] + lon) / 2, (mid[1] + lat) / 2],
-    zoom: 17.8,
+    center: mid,
+    zoom: 17.6,
     attributionControl: false
   });
   map.on('load', function () {
-    paintContext(lon, lat);
+    if (lastFix) {
+      paintContext(lastFix[0], lastFix[1]);
+      new maplibregl.Marker({ color: '#0a84ff' }).setLngLat(lastFix).addTo(map);
+    }
     paintSides();
-    new maplibregl.Marker({ color: '#007aff' }).setLngLat([lon, lat]).addTo(map);
-    /* The map is full-bleed and the sheet floats over its lower half, so the
-       block needs lifting clear of it. syncMapToSheet owns that offset and
-       re-applies it whenever the sheet is dragged -- doing it here as well
-       double-counted and pushed the block off screen. */
-    mapOffset = 0;
-    syncMapToSheet();
   });
 }
 
-initSheetDrag();
+/* Tapping the NFC sticker stamps the time, so the app can say how long the car
+   has been there -- the thing you actually forget. */
+function stampParked() {
+  try { localStorage.setItem('parkedAt', String(Date.now())); } catch (e) {}
+}
+
+function showParkedStamp() {
+  var el = $('parked');
+  var at;
+  try { at = +localStorage.getItem('parkedAt'); } catch (e) { at = 0; }
+  if (!at || Date.now() - at > 1000 * 60 * 60 * 72) { el.hidden = true; return; }
+  var mins = Math.round((Date.now() - at) / 60000);
+  var when = new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  el.hidden = false;
+  el.textContent = mins < 60 ? 'Parked ' + mins + 'm ago'
+                 : 'Parked ' + when;
+}
+
 $('remind').onclick = downloadIcs;
+$('showmap').onclick = showMap;
+$('closemap').onclick = function () { $('mapwrap').hidden = true; };
 $('showcompass').onclick = startCompass;
 
 $('report').onclick = function () {

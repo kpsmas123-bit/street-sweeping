@@ -1,37 +1,22 @@
-/* Deference, clarity, depth. System font, system colours, one accent, and as
-   little chrome as the job allows. Sized for a phone held one-handed. */
+/* Dark, quiet, glanceable. One bright thing on screen at a time: the kerb that
+   matters. Sized for a phone held one-handed at the kerb. */
 :root {
-  --bg: #f2f2f7;            /* systemGroupedBackground */
-  --surface: #ffffff;
-  --label: #000000;
-  --label-2: #3c3c4399;     /* secondaryLabel */
-  --label-3: #3c3c434d;
-  --separator: #3c3c4336;
-  --green: #34c759;
-  --orange: #ff9500;
-  --red: #ff3b30;
-  --blue: #007aff;
-  --gray: #8e8e93;
-  --fill: #78788033;
-  --radius: 14px;
-  --pad: 20px;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #000000;
-    --surface: #1c1c1e;
-    --label: #ffffff;
-    --label-2: #ebebf599;
-    --label-3: #ebebf54d;
-    --separator: #54545899;
-    --fill: #7878805c;
-  }
+  --bg: #0b0d10;
+  --surface: #14171c;
+  --surface-2: #1c2027;
+  --label: #f2f4f7;
+  --label-2: #98a1ae;
+  --label-3: #5d6673;
+  --hair: #262b33;
+  --green: #32d74b;
+  --amber: #ff9f0a;
+  --red: #ff453a;
+  --blue: #0a84ff;
+  --road: #1a1e25;
+  --radius: 16px;
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-
-/* A class that sets `display` outranks the bare [hidden] attribute, so an
-   element toggled with el.hidden stays on screen. Make the attribute win. */
 [hidden] { display: none !important; }
 
 html, body {
@@ -43,181 +28,158 @@ html, body {
   overscroll-behavior: none;
 }
 
-#map { position: fixed; inset: 0; background: var(--bg); }
-
-/* --- status pill ---------------------------------------------------------- */
-.status {
-  position: fixed; left: 50%; transform: translateX(-50%);
-  top: calc(env(safe-area-inset-top, 0px) + 12px);
-  z-index: 20; max-width: calc(100vw - 32px);
-  padding: 10px 18px; border-radius: 999px;
-  background: var(--surface); color: var(--label);
-  font-size: 15px; text-align: center;
-  box-shadow: 0 4px 16px #0000001f;
-}
-.status[data-tone="error"] { color: var(--red); }
-
-/* --- bottom sheet --------------------------------------------------------- */
-.sheet {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
-  max-height: 82vh;
-  background: var(--surface);
-  border-radius: var(--radius) var(--radius) 0 0;
-  box-shadow: 0 -1px 0 var(--separator), 0 -12px 40px #00000024;
-  padding: 0 var(--pad) calc(env(safe-area-inset-bottom, 0px) + 20px);
-  /* Slid down by --y. Dragging sets it directly; releasing animates to a detent. */
-  transform: translateY(var(--y, 0px));
-  animation: rise .28s cubic-bezier(.32, .72, 0, 1);
-  touch-action: pan-y;
-}
-.sheet.snapping { transition: transform .32s cubic-bezier(.32, .72, 0, 1); }
-/* Only the content below the handle scrolls, so a drag on the handle is never
-   competing with a scroll. */
-.sheet-scroll { overflow-y: auto; -webkit-overflow-scrolling: touch; }
-@keyframes rise { from { opacity: 0 } }   /* transform belongs to the drag now */
-@media (prefers-reduced-motion: reduce) { .sheet { animation: none } }
-
-/* The drag target: a comfortable 44pt strip, with the visible pill centred in
-   it. Grabbing anywhere in the header works, which is what people try first. */
-.handle {
-  display: block; width: 100%; height: 34px; padding: 0; border: 0;
-  background: none; cursor: grab; touch-action: none;
-  -webkit-user-select: none; user-select: none;
-}
-.handle:active { cursor: grabbing; }
-.grabber {
-  display: block; width: 36px; height: 5px; margin: 14px auto 0;
-  border-radius: 3px; background: var(--label-3);
-  transition: background .18s ease;
-}
-.handle:hover .grabber { background: var(--label-2); }
-
-.sheet-head h1 {
-  margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -.35px;
-}
-.addr { margin: 2px 0 0; font-size: 15px; color: var(--label-2); }
-
-/* --- segmented control (side picker) -------------------------------------- */
-.segmented {
-  display: flex; gap: 2px; margin: 16px 0 4px; padding: 2px;
-  background: var(--fill); border-radius: 9px;
-}
-.segmented:empty { display: none }
-.segmented button {
-  flex: 1 1 0; min-height: 44px;      /* 44pt: the smallest comfortable target */
-  border: 0; border-radius: 7px; padding: 6px 8px;
-  background: transparent; color: var(--label);
-  font: inherit; font-size: 15px; font-weight: 500;
-  cursor: pointer; transition: background .18s ease;
-}
-.segmented button[aria-selected="true"] {
-  background: var(--surface); font-weight: 600;
-  box-shadow: 0 1px 3px #0000002e;
-}
-.segmented .swatch {
-  display: inline-block; width: 9px; height: 9px; border-radius: 50%;
-  margin-right: 6px; vertical-align: 1px;
+.app {
+  display: flex; flex-direction: column;
+  height: 100%; height: 100dvh;
 }
 
-/* --- the answer ----------------------------------------------------------- */
-.verdict { padding: 18px 0 4px; }
-.headline {
-  margin: 0; font-size: 32px; line-height: 1.12; font-weight: 700;
-  letter-spacing: -.7px;
+/* --- overhead scene -------------------------------------------------------- */
+.stage {
+  position: relative; flex: 1 1 auto; min-height: 0;
+  background: var(--bg); overflow: hidden;
 }
-.headline[data-tone="ok"]    { color: var(--green) }
-.headline[data-tone="soon"]  { color: var(--orange) }
-.headline[data-tone="now"]   { color: var(--red) }
-.headline[data-tone="muted"] { color: var(--label) }
-.detail { margin: 6px 0 0; font-size: 17px; color: var(--label-2); }
+.scene { position: absolute; inset: 0; width: 100%; height: 100%; }
 
-.caveat {
-  margin: 14px 0 0; padding: 12px 14px; border-radius: 10px;
-  background: var(--fill); font-size: 14px; line-height: 1.45; color: var(--label);
+.road { fill: var(--road); }
+.centerline {
+  stroke: #3a424e; stroke-width: 2.5; stroke-dasharray: 16 18; stroke-linecap: round;
 }
+.cross line { stroke: #171b21; stroke-width: 26; stroke-linecap: butt; }
 
-/* --- legal ---------------------------------------------------------------- */
-.legal {
-  margin-top: 18px; padding-top: 14px; border-top: .5px solid var(--separator);
-  font-size: 13px; line-height: 1.45; color: var(--label-2);
+/* Each kerb is tinted by its own status; neither is chosen for you. */
+.kerb {
+  fill: #2a313a;
+  transition: fill .45s ease, opacity .45s ease;
 }
-.legal strong { color: var(--label); }
-.link {
-  display: block; margin-top: 10px; padding: 0; min-height: 32px;
-  border: 0; background: none; color: var(--blue);
-  font: inherit; font-size: 13px; text-align: left; cursor: pointer;
-}
+.kerb[data-tone="ok"]    { fill: var(--green); }
+.kerb[data-tone="soon"]  { fill: var(--amber); }
+.kerb[data-tone="now"]   { fill: var(--red); }
+.kerb[data-tone="muted"] { fill: #6c7784; }
+/* The unchosen kerb stays clearly visible: at .3 it read as empty road and hid
+   the fact that there is another side to tap. */
+.kerb[data-active="false"] { opacity: .62; }
+.kerb[data-active="true"]  { opacity: 1; filter: url(#glow); }
 
-/* --- map bits ------------------------------------------------------------- */
-.maplibregl-ctrl-attrib { font-size: 10px }
-
-/* Primary action: full-width, 44pt minimum, the one filled control on screen. */
-.primary {
-  display: block; width: 100%; min-height: 50px; margin-top: 18px;
-  border: 0; border-radius: 12px; padding: 14px 16px;
-  background: var(--blue); color: #fff;
-  font: inherit; font-size: 17px; font-weight: 600; cursor: pointer;
+.car {
+  transition: transform .7s cubic-bezier(.34, .9, .28, 1);
+  transform: translate(180px, 250px);
 }
-.primary:active { opacity: .82 }
-.vintage { margin: 10px 0 0; font-size: 12px; color: var(--label-3); }
+.car-body  { fill: #eef1f5; }
+.car-glass { fill: #2b323c; }
+.car-roof  { fill: #cdd4dd; }
+.car--placing { animation: hover 2.4s ease-in-out infinite; }
+@keyframes hover { 50% { opacity: .55 } }
 
-/* Secondary action: same target size, no fill -- it must not compete with the
-   primary, and it only appears when a facing is actually known. */
-.secondary {
-  display: block; width: 100%; min-height: 44px; margin-top: 12px;
-  border: 0; border-radius: 12px; padding: 11px 16px;
-  background: var(--fill); color: var(--blue);
-  font: inherit; font-size: 16px; font-weight: 500; cursor: pointer;
-}
-.secondary:active { opacity: .7 }
+.vignette { pointer-events: none; }
 
-.compass {
-  display: flex; align-items: center; gap: 14px;
-  margin-top: 14px; padding: 12px 14px;
-  border-radius: 12px; background: var(--fill);
+/* Kerb labels sit in HTML so they stay upright and tappable. */
+/* Sit the labels above the car, not on top of it -- at 50% they covered it. */
+.kerb-label {
+  position: absolute; top: 20%; left: 3%;
+  max-width: 43%; padding: 11px 13px;
+  border: 1.5px solid var(--hair); border-radius: 13px;
+  background: #14171cdb; -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  color: var(--label); font: inherit; font-size: 13px; line-height: 1.3;
+  text-align: left; cursor: pointer;
 }
+.kerb-label--b { left: auto; right: 3%; }
+.kerb-label[aria-pressed="true"] { border-color: currentColor; }
+.kerb-label .kl-side { display: block; font-size: 15px; font-weight: 650; }
+.kerb-label .kl-meta { display: block; margin-top: 1px; color: var(--label-2); }
+.kerb-label .kl-state { display: block; margin-top: 5px; font-weight: 650; }
+.kerb-label[data-tone="ok"]    .kl-state { color: var(--green); }
+.kerb-label[data-tone="soon"]  .kl-state { color: var(--amber); }
+.kerb-label[data-tone="now"]   .kl-state { color: var(--red); }
+.kerb-label[data-tone="muted"] .kl-state { color: var(--label-2); }
+
 .rose {
-  position: relative; flex: 0 0 auto; width: 44px; height: 44px;
-  border-radius: 50%; background: var(--surface);
-  box-shadow: inset 0 0 0 1px var(--separator);
+  position: absolute; top: 14px; right: 14px;
+  width: 38px; height: 38px; border-radius: 50%;
+  background: #14171ccc; border: 1px solid var(--hair);
 }
 .needle {
   position: absolute; left: 50%; top: 50%;
-  width: 3px; height: 17px; margin: -17px 0 0 -1.5px;
+  width: 2.5px; height: 14px; margin: -14px 0 0 -1.25px;
   border-radius: 2px; background: var(--red);
-  transform-origin: 50% 100%;
-  transition: transform .12s linear;
+  transform-origin: 50% 100%; transition: transform .12s linear;
 }
 .needle::after {
-  content: ''; position: absolute; left: 0; top: 17px;
-  width: 3px; height: 17px; border-radius: 2px; background: var(--label-3);
+  content: ''; position: absolute; left: 0; top: 14px;
+  width: 2.5px; height: 14px; border-radius: 2px; background: #4b5460;
 }
-.facing { margin: 0; font-size: 14px; line-height: 1.35; color: var(--label); }
-@media (prefers-reduced-motion: reduce) { .needle { transition: none } }
 
-/* --- both sides, as two cards ---------------------------------------------
-   No pre-selected answer: each side states its own verdict, and you match it to
-   the nearest house number. Tapping one only highlights it on the map. */
-.sides { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
-.side-card {
-  display: flex; flex-direction: column; gap: 3px;
-  width: 100%; padding: 14px 15px; text-align: left;
-  border: 0; border-radius: 12px; background: var(--fill);
-  font: inherit; color: var(--label); cursor: pointer;
-  box-shadow: inset 0 0 0 1.5px transparent;
-  transition: box-shadow .16s ease;
+.facing {
+  position: absolute; right: 12px; top: 58px; margin: 0;
+  max-width: 62%; padding: 8px 11px; border-radius: 11px;
+  background: #14171ccc; border: 1px solid var(--hair);
+  font-size: 12px; line-height: 1.35; color: var(--label-2); text-align: right;
 }
-.side-card[aria-pressed="true"] { box-shadow: inset 0 0 0 1.5px var(--blue); }
-.side-top { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; }
-.side-who { font-size: 16px; font-weight: 600; }
-.side-bits { font-size: 14px; color: var(--label-2); }
-.side-verdict { margin-top: 4px; font-size: 22px; font-weight: 700; letter-spacing: -.4px; }
-.side-verdict[data-tone="ok"]    { color: var(--green) }
-.side-verdict[data-tone="soon"]  { color: var(--orange) }
-.side-verdict[data-tone="now"]   { color: var(--red) }
-.side-verdict[data-tone="muted"] { color: var(--label) }
-.side-detail { font-size: 15px; color: var(--label-2); }
-.side-sched { font-size: 13px; color: var(--label-3); }
-.side-note {
-  margin-top: 6px; font-size: 13px; line-height: 1.4; color: var(--label);
+
+.parked {
+  position: absolute; top: 14px; left: 14px;
+  padding: 7px 12px; border-radius: 999px;
+  background: #14171ccc; border: 1px solid var(--hair);
+  font-size: 12px; color: var(--label-2);
+}
+
+/* --- panel ----------------------------------------------------------------- */
+.panel {
+  flex: 0 0 auto; max-height: 58%;
+  overflow-y: auto; -webkit-overflow-scrolling: touch;
+  padding: 16px 20px calc(env(safe-area-inset-bottom, 0px) + 18px);
+  background: var(--surface);
+  border-radius: var(--radius) var(--radius) 0 0;
+  box-shadow: 0 -1px 0 var(--hair);
+}
+.status { font-size: 15px; color: var(--label-2); padding: 6px 0; }
+.status[data-tone="error"] { color: var(--red); }
+
+.detail h1 { margin: 0; font-size: 26px; font-weight: 680; letter-spacing: -.5px; }
+.prompt { margin: 4px 0 0; font-size: 15px; color: var(--label-2); }
+
+.verdict { margin-top: 14px; }
+.headline { margin: 0; font-size: 34px; line-height: 1.08; font-weight: 760; letter-spacing: -.9px; }
+.headline[data-tone="ok"]    { color: var(--green); }
+.headline[data-tone="soon"]  { color: var(--amber); }
+.headline[data-tone="now"]   { color: var(--red); }
+.headline[data-tone="muted"] { color: var(--label); }
+.sub { margin: 6px 0 0; font-size: 16px; color: var(--label-2); }
+.note {
+  margin: 12px 0 0; padding: 11px 13px; border-radius: 11px;
+  background: var(--surface-2); font-size: 13.5px; line-height: 1.45;
+}
+
+.actions { display: flex; gap: 9px; margin-top: 16px; flex-wrap: wrap; }
+.btn {
+  flex: 1 1 auto; min-height: 46px; padding: 12px 16px;
+  border: 0; border-radius: 13px; background: var(--surface-2); color: var(--label);
+  font: inherit; font-size: 15px; font-weight: 600; cursor: pointer;
+}
+.btn:active { opacity: .7; }
+.btn--primary { background: var(--blue); color: #fff; flex: 2 1 auto; }
+.btn--float {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 18px);
+  flex: 0 0 auto; min-width: 140px; background: var(--surface); z-index: 3;
+}
+
+.legal {
+  margin-top: 16px; padding-top: 13px; border-top: 1px solid var(--hair);
+  font-size: 12.5px; line-height: 1.45; color: var(--label-3);
+}
+.legal strong { color: var(--label-2); }
+.link {
+  padding: 0; margin-left: 4px; border: 0; background: none;
+  color: var(--blue); font: inherit; font-size: 12.5px; cursor: pointer;
+}
+.vintage { display: block; margin-top: 7px; }
+
+/* --- map overlay ----------------------------------------------------------- */
+.mapwrap { position: fixed; inset: 0; z-index: 30; background: var(--bg); }
+#map { position: absolute; inset: 0; }
+.maplibregl-ctrl-attrib { font-size: 10px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .car, .kerb, .needle { transition: none; }
+  .car--placing { animation: none; }
 }
