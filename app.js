@@ -542,8 +542,16 @@ function verdictFor(side, now) {
      block is not swept. Rendering both as "No sweeping listed" turned 83 Oakland
      sides of unreadable data into a confident negative. */
   if (side.k === '?') {
-    return { tone: 'muted', headline: 'Unknown — check the sign',
-             detail: 'We could not read a schedule for this side.' };
+    /* Two different unknowns. Either the city published something we could not
+       parse, or the city itself did not commit -- and blaming our own reading
+       for the city's vagueness misdescribes what happened. */
+    return {
+      tone: 'muted',
+      headline: side.x ? 'Sweeps here — week not stated' : 'Unknown — check the sign',
+      detail: side.x
+        ? 'The city gives the day and the hours but not which week.'
+        : 'We could not read a schedule for this side.'
+    };
   }
   return { tone: 'muted', headline: 'No sweeping listed', detail: describe(side) };
 }
@@ -1268,18 +1276,43 @@ function continuedRoad(coords) {
          would draw a road that bends into a different street. */
       if ((seg.n || '').toLowerCase() !== name) continue;
       var g = seg.g;
-      if (near(g[0], line[line.length - 1])) { line = line.concat(g.slice(1)); }
+      var joined = null;
+      if (near(g[0], line[line.length - 1])) joined = line.concat(g.slice(1));
       else if (near(g[g.length - 1], line[line.length - 1])) {
-        line = line.concat(g.slice(0, -1).reverse());
-      } else if (near(g[g.length - 1], line[0])) { line = g.slice(0, -1).concat(line); }
-      else if (near(g[0], line[0])) { line = g.slice(1).reverse().concat(line); }
+        joined = line.concat(g.slice(0, -1).reverse());
+      } else if (near(g[g.length - 1], line[0])) joined = g.slice(0, -1).concat(line);
+      else if (near(g[0], line[0])) joined = g.slice(1).reverse().concat(line);
       else continue;
+
+      /* Reject a join that doubles back. A street digitised as two parallel
+         runs -- which Emeryville does -- shares an endpoint with itself, so
+         appending on name and touching alone folded the road over and drew the
+         centreline twice. A real continuation carries on in roughly the same
+         direction; a fold reverses. */
+      if (foldsBack(joined)) continue;
+
+      line = joined;
       used[seg.i] = 1;
       grew = true;
     }
     if (!grew) break;
   }
   return line;
+}
+
+/* Does this path reverse on itself anywhere? Compares each pair of consecutive
+   directions and flags anything sharper than a street corner. */
+function foldsBack(pts) {
+  for (var i = 1; i < pts.length - 1; i++) {
+    var ax = pts[i][0] - pts[i - 1][0], ay = pts[i][1] - pts[i - 1][1];
+    var bx = pts[i + 1][0] - pts[i][0], by = pts[i + 1][1] - pts[i][1];
+    var la = Math.hypot(ax, ay), lb = Math.hypot(bx, by);
+    if (!la || !lb) continue;
+    /* cos of the turn angle; below -0.5 is a turn sharper than 120 degrees,
+       which is a fold rather than a bend in a street. */
+    if ((ax * bx + ay * by) / (la * lb) < -0.5) return true;
+  }
+  return false;
 }
 
 function drawScene(lon, lat) {
@@ -1299,8 +1332,15 @@ function drawScene(lon, lat) {
 
   /* Which hand of the line each side sits on, so the kerb is drawn where that
      side actually is rather than arbitrarily left or right. */
-  current.s.slice(0, 2).forEach(function (side, i) {
-    var hand = handOfSide(side, sc.bearing);
+  /* A block with one entry still has two kerbs on screen; draw the far one from
+     the same centreline so the road has two edges. */
+  var drawFor = current.s.length === 1 && current.s[0].d === 'both'
+    ? [current.s[0], current.s[0]]
+    : current.s.slice(0, 2);
+  drawFor.forEach(function (side, i) {
+    var hand = current.s.length === 1
+      ? (i === 0 ? 'left' : 'right')
+      : handOfSide(side, sc.bearing);
     var metres = hand === 'left' ? -HALF_ROAD : HALF_ROAD;
     var el = $(i === 0 ? 'kerbA' : 'kerbB');
     el.setAttribute('d', pathOf(offsetPath(coords, metres, sc.project)));
@@ -1514,8 +1554,17 @@ function renderStage() {
      side the data never established. Say what is known and let them confirm. */
   if (current.s.length < 2) {
     $('labelB').hidden = true;
-    $('kerbB').setAttribute('data-tone', 'muted');
-    $('kerbB').setAttribute('data-active', 'false');
+    var only = current.s[0];
+    if (only && only.d === 'both') {
+      /* The schedule covers both kerbs, so both are drawn in its colour --
+         tinting one and greying the other would contradict the label. */
+      var tone = verdictFor(only, now).tone;
+      $('kerbB').setAttribute('data-tone', tone);
+      $('kerbB').setAttribute('data-active', String(!!(placed || suggestion)));
+    } else {
+      $('kerbB').setAttribute('data-tone', 'muted');
+      $('kerbB').setAttribute('data-active', 'false');
+    }
   }
 
   moveCar();
