@@ -252,6 +252,35 @@ cannot express `frame-ancestors` — clickjacking protection is simply unavailab
 on Pages — but `connect-src 'self'` does mean a compromised CDN script could not
 post the stored location anywhere.
 
+## Moving to Cloudflare Pages
+
+Worth doing, and it fixes two separate problems rather than one.
+
+**It gives the app its own origin.** `street-sweeping.pages.dev` does not share
+`localStorage` with any other project, which is the only real fix for the shared
+bucket described above.
+
+**It can set response headers.** GitHub Pages cannot, which is why the CSP here
+is a `<meta>` tag missing `frame-ancestors`, and why every asset URL carries a
+`?v=` query string to defeat a fixed ten-minute cache. `_headers` in this repo
+replaces both: a full CSP, `nosniff`, `no-referrer`, a `Permissions-Policy`
+limiting the app to the sensors it actually uses, and per-path cache rules that
+keep the shell fresh while letting tiles cache for a day.
+
+Setup, once:
+
+1. Cloudflare dashboard → Workers & Pages → Create → Pages → Connect to Git,
+   and pick this repo.
+2. Build command: **none**. Build output directory: **`/`** (the repo root is
+   the site).
+3. Deploy. `_headers` and `_redirects` are picked up automatically.
+4. **Rewrite the NFC sticker** to the new origin — the old URL keeps working but
+   writes its session to the old, shared bucket.
+
+GitHub Pages can stay as it is; `_headers` and `_redirects` are inert there, so
+both deploys work from the same branch. Once Cloudflare is the real one, the
+`?v=` query strings and the `<meta>` CSP can go.
+
 ## Deploying
 
 GitHub Pages serves every file with `Cache-Control: max-age=600`, so a returning

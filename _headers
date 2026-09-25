@@ -1,0 +1,37 @@
+# Cloudflare Pages reads this file; GitHub Pages ignores it, so the repo can
+# deploy to both while only one of them gets real headers.
+#
+# This is the main reason to move: GitHub Pages cannot set response headers at
+# all, which forced the CSP into a <meta> tag (where frame-ancestors is not
+# expressible) and forced cache-busting query strings into every asset URL.
+
+/*
+  # A real CSP, including the two directives a meta tag cannot carry.
+  Content-Security-Policy: default-src 'none'; script-src 'self' https://cdnjs.cloudflare.com blob:; style-src 'self' https://cdnjs.cloudflare.com 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; worker-src blob: 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  # The app asks for location and orientation; nothing else, and nothing nested.
+  Permissions-Policy: geolocation=(self), accelerometer=(self), gyroscope=(self), magnetometer=(self), camera=(), microphone=(), payment=(), usb=()
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Resource-Policy: same-origin
+
+# The shell must never be stale: GitHub Pages' fixed 10-minute cache is what let
+# a deploy serve old JavaScript against new data.
+/
+  Cache-Control: no-cache
+/index.html
+  Cache-Control: no-cache
+/app.js
+  Cache-Control: no-cache
+/style.css
+  Cache-Control: no-cache
+/sw.js
+  Cache-Control: no-cache
+
+# City data is rebuilt monthly and revalidates cheaply.
+/data/*
+  Cache-Control: public, max-age=3600, must-revalidate
+
+# Tiles are content-addressed by grid cell and only change when the ETL reruns.
+/data/tiles/*
+  Cache-Control: public, max-age=86400, must-revalidate

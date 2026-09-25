@@ -1,0 +1,3 @@
+# Cloudflare Pages. Anything that is not a real file falls back to the app
+# rather than a 404 page, so a mistyped path still answers.
+/*  /index.html  200
