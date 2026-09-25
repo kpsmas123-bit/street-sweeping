@@ -293,7 +293,16 @@ function startCompass() {
 
    The in-app countdown works with no setup at all and is what the headline
    shows; this is for when the phone is in a pocket. */
-var TIMER_SHORTCUT = 'Park Timer';
+/* Apple ships a "Set Timer" shortcut in the Clock section of the Shortcuts
+   gallery -- adding it is one tap, so that is the default name. Anyone whose
+   copy is named differently can change it; the name is all the URL scheme has
+   to go on. */
+var TIMER_DEFAULT = 'Set Timer';
+
+function timerShortcutName() {
+  try { return localStorage.getItem('timerShortcut') || TIMER_DEFAULT; }
+  catch (e) { return TIMER_DEFAULT; }
+}
 
 function minutesUntilDeadline() {
   if (!current || !placed) return null;
@@ -306,20 +315,44 @@ function minutesUntilDeadline() {
 function startNativeTimer() {
   var mins = minutesUntilDeadline();
   if (!mins) { setStatus('Nothing to count down to yet.', 'error'); return; }
-  /* Fire the shortcut. If it is not installed iOS shows its own "shortcut not
-     found" sheet, which is clearer than anything this page could say. */
+  /* Fire the shortcut with the minutes as input. If it is not installed iOS
+     shows its own "shortcut not found" sheet, which is clearer than anything
+     this page could say. */
   window.location.href = 'shortcuts://x-callback-url/run-shortcut' +
-    '?name=' + encodeURIComponent(TIMER_SHORTCUT) +
+    '?name=' + encodeURIComponent(timerShortcutName()) +
     '&input=text&text=' + encodeURIComponent(String(mins));
 }
+
+function renameTimerShortcut() {
+  var name = window.prompt(
+    'Name of the Shortcut to run for timers.\n\n' +
+    'Apple\u2019s built-in one is called "Set Timer" \u2014 add it from the ' +
+    'Shortcuts gallery under Clock. The minutes remaining are passed to it as input.',
+    timerShortcutName());
+  if (name === null) return;
+  try {
+    localStorage.setItem('timerShortcut', name.trim() || TIMER_DEFAULT);
+  } catch (e) {}
+  renderTimerButton();
+}
+
+/* The Clock app is for hours, not weeks. Offering "Timer - 19d 8h" for a sweep
+   three weeks out is noise; past a day the calendar export is the right tool. */
+var TIMER_MAX_MINUTES = 12 * 60;
 
 function renderTimerButton() {
   var b = $('timer');
   if (!b) return;
   var mins = minutesUntilDeadline();
-  b.hidden = !mins;
-  if (mins) {
-    b.textContent = 'Timer · ' + countdownText(mins * 60000);
+  var worthIt = mins && mins <= TIMER_MAX_MINUTES;
+  b.hidden = !worthIt;
+  if (worthIt) b.textContent = 'Timer · ' + countdownText(mins * 60000);
+  /* With no timer on offer the calendar export stops being the quiet fallback
+     and becomes the only way to be reminded, so it moves up. */
+  var cal = $('remind');
+  if (cal) {
+    cal.classList.toggle('btn--primary', !worthIt);
+    cal.classList.toggle('btn--quiet', !!worthIt);   /* or it stays transparent */
   }
 }
 
@@ -965,6 +998,132 @@ function renderPermit() {
   }
 }
 
+/* ---------------------------------------------------------------- the scene */
+/* Drawn from the block's real geometry rather than a stock straight road: a
+   curved block curves, a skew junction is skew, and the cross streets are the
+   ones actually there. The whole scene is rotated so the block runs up the
+   screen, which is how a car display orients -- the world turns, the car does
+   not. */
+var SCALE = 5;            /* SVG units per metre: ~92 m of street fills the view */
+var HALF_ROAD = 4.6;      /* metres from centreline to kerb */
+var VIEW_W = 360, VIEW_H = 460;
+var scene = null;         /* the projection in force, for placing the car */
+
+function buildScene(lon, lat) {
+  var g = current.g;
+  /* Centre on the car, not on the middle of the block. Framing the block put the
+     car at whichever end it happened to be parked at -- sometimes off screen
+     entirely. A car display keeps the vehicle put and moves the world past it. */
+  var mid = [lon, lat];
+  var mx = MX_AT(mid[1]);
+  var seg = segmentBearingNear(lon, lat) || { bearing: 0 };
+  var rot = -seg.bearing * Math.PI / 180;
+  var cos = Math.cos(rot), sin = Math.sin(rot);
+
+  function rotated(pt) {
+    var ex = (pt[0] - mid[0]) * mx;
+    var ny = (pt[1] - mid[1]) * MY;
+    return [ex * cos - ny * sin, ex * sin + ny * cos];
+  }
+
+  /* Frame the block itself rather than a fixed zoom. A short block filled a
+     sliver of the screen and a long one ran off both ends; scaling to what is
+     actually there makes every block read the same way. Clamped so a very short
+     stub is not blown up into abstraction, and a very long one still shows the
+     kerbs far enough apart to tell apart -- which is the entire job. */
+  /* Show enough of the block either side of the car to read as a street, but
+     stay zoomed in enough that the two kerbs are plainly separate -- telling
+     them apart is the entire job of this picture. */
+  var ys = g.map(rotated).map(function (p) { return Math.abs(p[1]); });
+  var reach = Math.max(25, Math.min(70, Math.max.apply(null, ys)));
+  var scale = Math.max(3.4, Math.min(6.5, (VIEW_H * 0.42) / reach));
+
+  function project(pt) {
+    var r = rotated(pt);
+    return [VIEW_W / 2 + r[0] * scale, VIEW_H / 2 - r[1] * scale];
+  }
+
+  scene = { project: project, mid: mid, bearing: seg.bearing, scale: scale };
+  return scene;
+}
+
+function pathOf(points) {
+  return points.map(function (p, i) {
+    return (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1);
+  }).join(' ');
+}
+
+/* A kerb is the centreline pushed sideways by half the roadway. */
+function offsetPath(coords, metres, project) {
+  var out = [];
+  for (var i = 0; i < coords.length; i++) {
+    var a = coords[Math.max(0, i - 1)], b = coords[Math.min(coords.length - 1, i + 1)];
+    var pa = project(a), pb = project(b);
+    var dx = pb[0] - pa[0], dy = pb[1] - pa[1];
+    var len = Math.hypot(dx, dy) || 1;
+    var nx = -dy / len, ny = dx / len;          /* left normal in screen space */
+    var p = project(coords[i]);
+    out.push([p[0] + nx * metres * (scene ? scene.scale : SCALE),
+              p[1] + ny * metres * (scene ? scene.scale : SCALE)]);
+  }
+  return out;
+}
+
+function drawScene(lon, lat) {
+  var sc = buildScene(lon, lat);
+  var coords = current.g;
+
+  /* Stroke widths are in SVG units, so they have to track the scale too or a
+     zoomed-out block gets a motorway-wide road. */
+  $('road').style.strokeWidth = (HALF_ROAD * 2 * sc.scale).toFixed(1);
+  $('kerbA').style.strokeWidth = Math.max(3, sc.scale).toFixed(1);
+  $('kerbB').style.strokeWidth = Math.max(3, sc.scale).toFixed(1);
+  $('road').setAttribute('d', pathOf(coords.map(sc.project)));
+  $('centerline').setAttribute('d', pathOf(coords.map(sc.project)));
+
+  /* Which hand of the line each side sits on, so the kerb is drawn where that
+     side actually is rather than arbitrarily left or right. */
+  current.s.slice(0, 2).forEach(function (side, i) {
+    var hand = handOfSide(side, sc.bearing);
+    var metres = hand === 'left' ? -HALF_ROAD : HALF_ROAD;
+    $(i === 0 ? 'kerbA' : 'kerbB')
+      .setAttribute('d', pathOf(offsetPath(coords, metres, sc.project)));
+  });
+
+  drawContext(sc);
+  return sc;
+}
+
+/* 'left' or 'right' of the digitisation direction, from the side's compass tag.
+   Without a tag the two sides are simply drawn on opposite hands. */
+function handOfSide(side, bearing) {
+  if (side.f) {
+    return side.f === cardinalOf(bearing - 90) ? 'left' : 'right';
+  }
+  return current.s.indexOf(side) === 0 ? 'left' : 'right';
+}
+
+/* The streets actually around you, so the block reads as a place. */
+function drawContext(sc) {
+  var g = $('context');
+  g.innerHTML = '';
+  var drawn = 0;
+  for (var i = 0; i < segments.length && drawn < 60; i++) {
+    var seg = segments[i];
+    if (seg.i === current.i) continue;
+    var pts = seg.g.map(sc.project);
+    var onScreen = pts.some(function (p) {
+      return p[0] > -60 && p[0] < VIEW_W + 60 && p[1] > -60 && p[1] < VIEW_H + 60;
+    });
+    if (!onScreen) continue;
+    var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', pathOf(pts));
+    path.style.strokeWidth = (HALF_ROAD * 1.6 * sc.scale).toFixed(1);
+    g.appendChild(path);
+    drawn++;
+  }
+}
+
 /* ------------------------------------------------------------------ stage */
 /* An overhead view of the block with your car on it. GPS puts the car on the
    street -- that much it can do. Which kerb it sits on is still a tap, because
@@ -976,9 +1135,8 @@ var suggestion = null;      /* an inferred side, never an assumed one */
 var rememberedSide = null;  /* where this block was answered before */
 var lastFixDetail = null;
 var shortcutHint = null;    /* heading/accuracy handed in by an iOS Shortcut */
+var simulated = false;      /* ?at= override in play: never overwrite a real spot */
 
-/* Screen x of each kerb, matching the SVG. */
-var KERB_X = [124, 236];
 
 function toneOf(side, now) { return verdictFor(side, now).tone; }
 
@@ -993,8 +1151,7 @@ function tidyRange(a) {
 
 function renderStage() {
   var now = new Date();
-  var scene = $('scene');
-  drawCrossStreets();
+  if (lastFix) drawScene(lastFix[0], lastFix[1]);
 
   /* More than two sides means the geometric route join matched several routes
      to this centreline and we cannot say which kerb is which. Drawing two of
@@ -1086,11 +1243,54 @@ function renderAllSides() {
 function moveCar() {
   var car = $('car');
   var onKerb = (placed || suggestion) && current.s.length <= 2;
-  var x = onKerb ? KERB_X[Math.min(chosen, 1)] : 180;
-  car.style.transform = 'translate(' + x + 'px, 250px)';
-  /* Unconfirmed reads as unconfirmed: hollow and breathing, not solid. */
+  var pos = [VIEW_W / 2, VIEW_H / 2];
+  var angle = 0;
+
+  if (scene && lastFix) {
+    /* Put the car where the driver actually is along the block, pushed out to
+       the chosen kerb -- not at a fixed spot on a stock road. */
+    var here = scene.project(lastFix);
+    var lane = onKerb
+      ? offsetPath(current.g,
+          handOfSide(current.s[Math.min(chosen, 1)], scene.bearing) === 'left'
+            ? -HALF_ROAD * 0.62 : HALF_ROAD * 0.62,
+          scene.project)
+      : current.g.map(scene.project);
+    pos = nearestOnPath(here, lane);
+    angle = pos.angle;
+  }
+  /* Scale lives in the same CSS transform as position: setting it through the
+     SVG transform attribute as well just loses to this one. */
+  /* Never shrink the car past readability: on a long block the view zooms out
+     far enough that a true-to-scale car becomes a speck. */
+  var z = scene ? Math.max(0.8, scene.scale / 5) : 1;
+  car.style.transform = 'translate(' + pos[0].toFixed(1) + 'px, ' +
+                        pos[1].toFixed(1) + 'px) rotate(' + angle.toFixed(1) + 'deg) ' +
+                        'scale(' + z.toFixed(3) + ')';
   car.classList.toggle('car--placing', !onKerb);
   car.classList.toggle('car--guess', !placed && !!suggestion);
+}
+
+/* Closest point along a drawn path, plus the path's direction there, so the car
+   sits parallel to the kerb instead of floating at a fixed angle. */
+function nearestOnPath(p, pts) {
+  var best = [pts[0][0], pts[0][1]];
+  best.angle = 0;
+  var bestD = Infinity;
+  for (var i = 0; i < pts.length - 1; i++) {
+    var a = pts[i], b = pts[i + 1];
+    var dx = b[0] - a[0], dy = b[1] - a[1];
+    var L = dx * dx + dy * dy;
+    var t = L ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L)) : 0;
+    var qx = a[0] + t * dx, qy = a[1] + t * dy;
+    var d = Math.hypot(p[0] - qx, p[1] - qy);
+    if (d < bestD) {
+      bestD = d;
+      best = [qx, qy];
+      best.angle = Math.atan2(dx, -dy) * 180 / Math.PI;
+    }
+  }
+  return best;
 }
 
 function placeCar(i) {
@@ -1098,7 +1298,14 @@ function placeCar(i) {
   placed = true;
   suggestion = null;
   try { localStorage.setItem('side:' + current.i, String(i)); } catch (e) {}
-  /* The tap is the save. */
+  /* The tap is the save -- unless the position came from ?at=, which is a
+     testing affordance. Overwriting a real saved spot from a crafted link, on
+     the one tap the whole app invites, would lose it unrecoverably. */
+  if (simulated) {
+    renderStage();
+    paintSides();
+    return;
+  }
   saveSession({
     segId: current.i, side: i, at: Date.now(),
     lon: lastFix && lastFix[0], lat: lastFix && lastFix[1],
@@ -1109,17 +1316,6 @@ function placeCar(i) {
   startTicking();
 }
 
-/* Faint cross streets, purely to make the block read as a block. */
-function drawCrossStreets() {
-  var g = $('cross');
-  if (g.childNodes.length) return;
-  [40, 150, 330, 440].forEach(function (y) {
-    var l = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    l.setAttribute('x1', '-20'); l.setAttribute('x2', '380');
-    l.setAttribute('y1', y); l.setAttribute('y2', y);
-    g.appendChild(l);
-  });
-}
 
 function renderVerdict() {
   $('street').textContent = current.n || 'This block';
@@ -1338,6 +1534,7 @@ function locate() {
     accuracy: parseFloat(params0.get('acc'))
   };
   var at = params0.get('at');
+  simulated = !!at;
   if (at) {
     var p = at.split(',').map(Number);
     if (p.length === 2 && !isNaN(p[0]) && !isNaN(p[1])) {
@@ -1502,6 +1699,10 @@ function onPosition(pos) {
       showParkedStamp();
       renderRecall();
       startTicking();
+      if (simulated) {
+        setStatus('Simulated location — your saved spot is untouched.', 'error');
+        $('status').hidden = false;
+      }
     })
     .catch(function () { setStatus('Could not load sweeping data.', 'error'); });
 }
@@ -1534,7 +1735,14 @@ function showMap() {
 /* Tapping the NFC sticker stamps the time, so the app can say how long the car
    has been there -- the thing you actually forget. */
 function stampParked() {
-  try { localStorage.setItem('parkedAt', String(Date.now())); } catch (e) {}
+  /* A bare link with ?nfc=1 should not be able to wipe an existing reading, so
+     only stamp when there is not already a recent one. Tapping the sticker
+     again within the hour is the same parking event, not a new one. */
+  try {
+    var prev = +localStorage.getItem('parkedAt');
+    if (prev && Date.now() - prev < 1000 * 60 * 60) return;
+    localStorage.setItem('parkedAt', String(Date.now()));
+  } catch (e) {}
 }
 
 function showParkedStamp() {
@@ -1550,6 +1758,7 @@ function showParkedStamp() {
 }
 
 $('timer').onclick = startNativeTimer;
+$('timername').onclick = renameTimerShortcut;
 $('remind').onclick = downloadIcs;
 $('showmap').onclick = showMap;
 $('closemap').onclick = function () { $('mapwrap').hidden = true; };

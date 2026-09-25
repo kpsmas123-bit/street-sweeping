@@ -30,8 +30,11 @@ jobs:
       - name: Rebuild normalized data
         run: python etl/build.py
 
+      # Pinned to a commit, not a tag. This workflow grants contents: write, and
+      # pages.yml deploys main on every push -- so a repointed tag would run
+      # arbitrary code with a token that can replace app.js on the live site.
       - name: Open a PR if the data moved
-        uses: peter-evans/create-pull-request@v6
+        uses: peter-evans/create-pull-request@c5a7806660adbe173f04e3e038b0ccdcd758773c  # v6.1.0
         with:
           add-paths: data
           branch: data/refresh

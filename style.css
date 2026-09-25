@@ -40,23 +40,26 @@ html, body {
 }
 .scene { position: absolute; inset: 0; width: 100%; height: 100%; }
 
-.road { fill: var(--road); }
+/* The roadway is the real centreline, stroked to the street's actual width, so
+   a curved block looks curved and a skewed junction looks skewed. */
+.road { fill: none; stroke: var(--road); stroke-width: 46; stroke-linecap: round;
+        stroke-linejoin: round; }
 .centerline {
-  stroke: #3a424e; stroke-width: 2.5; stroke-dasharray: 16 18; stroke-linecap: round;
+  fill: none; stroke: #39424f; stroke-width: 1.6;
+  stroke-dasharray: 9 11; stroke-linecap: round;
 }
-.cross line { stroke: #171b21; stroke-width: 26; stroke-linecap: butt; }
+.context path { fill: none; stroke: #161a20; stroke-width: 34; stroke-linecap: round;
+                stroke-linejoin: round; }
 
 /* Each kerb is tinted by its own status; neither is chosen for you. */
 .kerb {
-  fill: #2a313a;
-  transition: fill .45s ease, opacity .45s ease;
+  fill: none; stroke: #2a313a; stroke-width: 5; stroke-linecap: round;
+  transition: stroke .45s ease, opacity .45s ease;
 }
-.kerb[data-tone="ok"]    { fill: var(--green); }
-.kerb[data-tone="soon"]  { fill: var(--amber); }
-.kerb[data-tone="now"]   { fill: var(--red); }
-.kerb[data-tone="muted"] { fill: #6c7784; }
-/* The unchosen kerb stays clearly visible: at .3 it read as empty road and hid
-   the fact that there is another side to tap. */
+.kerb[data-tone="ok"]    { stroke: var(--green); }
+.kerb[data-tone="soon"]  { stroke: var(--amber); }
+.kerb[data-tone="now"]   { stroke: var(--red); }
+.kerb[data-tone="muted"] { stroke: #6c7784; }
 .kerb[data-active="false"] { opacity: .62; }
 .kerb[data-active="true"]  { opacity: 1; filter: url(#glow); }
 
@@ -64,6 +67,10 @@ html, body {
   transition: transform .7s cubic-bezier(.34, .9, .28, 1);
   transform: translate(180px, 250px);
 }
+/* A slow drift in, so the block settles under the car rather than snapping. */
+.scene { animation: settle .9s cubic-bezier(.22, .8, .2, 1); }
+@keyframes settle { from { opacity: 0; transform: scale(1.06); } }
+@media (prefers-reduced-motion: reduce) { .scene { animation: none; } }
 .car-body  { fill: #eef1f5; }
 .car-glass { fill: #2b323c; }
 .car-roof  { fill: #cdd4dd; }
