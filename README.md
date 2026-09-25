@@ -221,6 +221,37 @@ The whole-city files stay, for two reasons: the service worker pre-caches them
 so the app works offline in a cell never visited, and they are the fallback when
 a tile fetch finds nothing.
 
+## Privacy, and one structural problem
+
+The parked-car location never leaves the device. It is written to `localStorage`
+and read back; there is no backend, no account, no analytics, and the only
+outbound navigation is the Apple Maps walk-back the user taps themselves.
+
+**But `localStorage` is scoped to an origin, and GitHub Pages project sites are
+paths on a shared one.** Every site under `kpsmas123-bit.github.io` —
+`street-sweeping`, `civicvoice`, `desk`, `campaign-tracker`,
+`berkeley-precinct-map`, `labor-organizing-model`, `samkp-com` — shares a single
+storage bucket, because origin is scheme + host + port and the path is not part
+of it. An XSS bug in any one of those can read this app's parked session: the
+car's coordinates, which are usually near home.
+
+The only real fix is a separate origin — a custom domain for this app. Until
+then:
+
+- the session expires after 36 hours rather than being kept indefinitely,
+- there is a **Forget my spot** control,
+- and the other six sites should be treated as inside this app's trust boundary.
+
+Related: no repo named `kpsmas123-bit.github.io` exists today. If one is ever
+created it can register a root-scoped service worker controlling `/street-sweeping/`
+and every other path, which is worse than shared storage. Don't create it
+casually.
+
+GitHub Pages cannot set response headers, so the CSP is a `<meta>` tag. That
+cannot express `frame-ancestors` — clickjacking protection is simply unavailable
+on Pages — but `connect-src 'self'` does mean a compromised CDN script could not
+post the stored location anywhere.
+
 ## Deploying
 
 GitHub Pages serves every file with `Cache-Control: max-age=600`, so a returning

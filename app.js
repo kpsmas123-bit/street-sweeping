@@ -546,8 +546,18 @@ function loadSession() {
     var raw = localStorage.getItem(SESSION_KEY);
     session = raw ? JSON.parse(raw) : null;
   } catch (e) { session = null; }
-  /* A car parked more than four days ago is almost certainly not still there. */
-  if (session && Date.now() - session.at > 1000 * 60 * 60 * 96) session = null;
+  /* Drop it once it is past being useful.
+     This is stored on a GitHub Pages origin shared with every other project
+     under the same account, so any XSS in a sibling site could read it -- and
+     what it holds is where the car is parked, which is usually near home. The
+     real fix is a separate origin; until then, hold it for as long as it is
+     actually needed and no longer. A sweep is at most a month out, but a car is
+     rarely left more than a day, so 36 hours covers the useful life of a
+     session and expires the sensitive part quickly. */
+  if (session && Date.now() - session.at > 1000 * 60 * 60 * 36) {
+    session = null;
+    try { localStorage.removeItem(SESSION_KEY); } catch (e) {}
+  }
   return session;
 }
 
@@ -614,6 +624,24 @@ function clearLimit() {
   saveSession({ limitUntil: null, limitLabel: null });
   renderVerdict();
   renderLimitRow();
+}
+
+/* Explicit control over the one piece of personal data here. */
+function forgetSpot() {
+  clearSession();
+  try {
+    localStorage.removeItem('parkedAt');
+    if (current) localStorage.removeItem('side:' + current.i);
+  } catch (e) {}
+  placed = false;
+  suggestion = null;
+  rememberedSide = null;
+  renderStage();
+  renderRecall();
+  showParkedStamp();
+  setStatus('Forgotten.', null);
+  $('status').hidden = false;
+  setTimeout(function () { $('status').hidden = true; }, 2000);
 }
 
 function startTicking() {
@@ -1363,6 +1391,7 @@ function renderVerdict() {
   $('note').hidden = !note;
   if (note) $('note').textContent = note;
   $('remind').hidden = !icsRule(side);
+  $('forget').hidden = !loadSession();
   renderTimerButton();
   $('showcompass').hidden = compassOn || !current.s.some(function (x) { return x.f; });
   renderLimitRow();
@@ -1759,6 +1788,7 @@ function showParkedStamp() {
 
 $('timer').onclick = startNativeTimer;
 $('timername').onclick = renameTimerShortcut;
+$('forget').onclick = forgetSpot;
 $('remind').onclick = downloadIcs;
 $('showmap').onclick = showMap;
 $('closemap').onclick = function () { $('mapwrap').hidden = true; };
