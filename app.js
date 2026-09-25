@@ -1107,6 +1107,7 @@ function renderPermit() {
    Runs once per block, and never when the system asks for reduced motion. */
 var flyRaf = null;
 var carArrival = 0;      /* metres-ish of approach left to travel, during fly-in */
+var flyTimer = null;
 
 function easeOutQuint(t) { return 1 - Math.pow(1 - t, 5); }
 function easeOutBack(t) {
@@ -1165,16 +1166,30 @@ function flyIn() {
     if (t < 1) {
       flyRaf = requestAnimationFrame(frame);
     } else {
-      cam.removeAttribute('transform');
-      $('kerbA').style.opacity = '';
-      $('kerbB').style.opacity = '';
-      if (car) car.style.opacity = '';
-      carArrival = 0;
-      moveCar();
-      flyRaf = null;
+      finishFly();
     }
   }
   flyRaf = requestAnimationFrame(frame);
+
+  /* requestAnimationFrame does not run in a backgrounded tab. The fly-in hides
+     the kerbs and the car at its start and restores them at its end, so a phone
+     locked or switched away mid-animation left the scene invisible for good --
+     a blank screen with a verdict under it. Guarantee the ending. */
+  clearTimeout(flyTimer);
+  flyTimer = setTimeout(finishFly, DUR + 250);
+}
+
+function finishFly() {
+  clearTimeout(flyTimer);
+  if (flyRaf) { cancelAnimationFrame(flyRaf); flyRaf = null; }
+  var cam = $('camera');
+  if (cam) cam.removeAttribute('transform');
+  $('kerbA').style.opacity = '';
+  $('kerbB').style.opacity = '';
+  var car = $('car');
+  if (car) car.style.opacity = '';
+  carArrival = 0;
+  if (current && scene) moveCar();
 }
 
 /* ---------------------------------------------------------------- the scene */
@@ -1452,8 +1467,10 @@ function runSweeper() {
 
   function step(ts) {
     if (startTs === null) startTs = ts;
-    var travelled = (((ts - startTs) / 1000) * SPEED) % (total + 60);
-    var d = Math.min(travelled, total);
+    /* Wrap continuously. A gap at the end of each pass left the sweeper simply
+       invisible for a stretch of every cycle, which reads as a bug rather than
+       a pause. */
+    var d = (((ts - startTs) / 1000) * SPEED) % total;
     var k = 1;
     while (k < cum.length && cum[k] < d) k++;
     var a = lane[k - 1], b = lane[Math.min(k, lane.length - 1)];
@@ -1462,10 +1479,12 @@ function runSweeper() {
     var x = a[0] + (b[0] - a[0]) * f;
     var y = a[1] + (b[1] - a[1]) * f;
     var ang = Math.atan2(b[0] - a[0], -(b[1] - a[1])) * 180 / Math.PI;
-    var fade = travelled > total ? 0 : 1;
+    /* Ease in and out at the ends of the run so it enters and leaves rather
+       than popping. */
+    var edge = Math.min(d, total - d) / Math.min(40, total / 2);
     el.setAttribute('transform',
       'translate(' + x.toFixed(1) + ' ' + y.toFixed(1) + ') rotate(' + ang.toFixed(1) + ')');
-    el.style.opacity = String(fade);
+    el.style.opacity = String(Math.max(0.15, Math.min(1, edge)));
     sweepRaf = requestAnimationFrame(step);
   }
   sweepRaf = requestAnimationFrame(step);
@@ -2206,6 +2225,29 @@ function showParkedStamp() {
   el.textContent = mins < 60 ? 'Parked ' + mins + 'm ago'
                  : 'Parked ' + when;
 }
+
+/* Coming back to the app must never find a half-finished animation or a map
+   that was built while the page had no size. These handlers lived inside the
+   bottom sheet and were lost when it was removed; without them a phone locked
+   mid-fly-in came back to an invisible scene. */
+function onBecameVisible() {
+  finishFly();
+  if (map) { map.resize(); }
+  if (current && scene) {
+    renderStage();
+  }
+}
+document.addEventListener('visibilitychange', function () {
+  if (document.visibilityState === 'visible') onBecameVisible();
+});
+window.addEventListener('pageshow', onBecameVisible);
+window.addEventListener('orientationchange', function () {
+  setTimeout(onBecameVisible, 120);   /* after the viewport settles */
+});
+window.addEventListener('resize', function () {
+  if (current && lastFix) { drawScene(lastFix[0], lastFix[1]); moveCar(); }
+  if (map) map.resize();
+});
 
 $('timer').onclick = startNativeTimer;
 $('timername').onclick = renameTimerShortcut;
