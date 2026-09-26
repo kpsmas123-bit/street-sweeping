@@ -27,6 +27,7 @@ themselves, whereas a wrong offer is exactly what was being complained about.
 import json
 import math
 import os
+import re
 import sys
 import urllib.parse
 import urllib.request
@@ -41,6 +42,7 @@ BERK_AREAS = ('https://services1.arcgis.com/IYiCpZoSIq9lAxi8/arcgis/rest/service
 
 MY = 110574.0
 METER_TOL_M = 30.0      # a meter stands on the sidewalk, not on the centreline
+END_MARGIN_M = 8.0      # the last few metres of a block belong to the corner
 CELL = 0.002            # ~180 m; the index cell for the meter lookup
 
 
@@ -53,12 +55,48 @@ def clean(v):
 
 
 # --- fetch ------------------------------------------------------------------
+# Oakland writes the street a meter stands on into SUB_AREA -- filled on all
+# 4,401 active meters -- and that, not distance, is what tells a corner meter
+# apart from the block it is standing near. The two spellings differ in only
+# two systematic ways, so normalise both sides and compare.
+_DIRS = {'EAST': 'E', 'WEST': 'W', 'NORTH': 'N', 'SOUTH': 'S'}
+_TYPES = {
+    'AVENUE': 'AVE', 'AV': 'AVE', 'STREET': 'ST', 'BOULEVARD': 'BLVD',
+    'DRIVE': 'DR', 'PLACE': 'PL', 'COURT': 'CT', 'TERRACE': 'TER',
+    'LANE': 'LN', 'ROAD': 'RD', 'PARKWAY': 'PKWY', 'CIRCLE': 'CIR',
+    'HIGHWAY': 'HWY', 'SQUARE': 'SQ',
+}
+
+
+# Oakland renamed East 14th St to International Blvd; the sweeping data uses
+# the new name and the meter inventory still uses the old one, which is 147
+# meters -- the single largest group that would otherwise go unmatched. There
+# are no blocks left called E 14th St in the sweeping data, so the alias is
+# unambiguous.
+_ALIASES = {'E 14TH ST': 'INTERNATIONAL BLVD'}
+
+
+def street_key(name):
+    """A comparable form of a street name, or '' when there is nothing to compare."""
+    n = re.sub(r'[^A-Z0-9 ]', ' ', (name or '').upper())
+    n = n.replace('MARTIN LUTHER KING', 'MLK')
+    words = [w for w in n.split() if w]
+    out = []
+    for i, w in enumerate(words):
+        if i == 0 and w in _DIRS:
+            out.append(_DIRS[w])
+        else:
+            out.append(_TYPES.get(w, w))
+    key = ' '.join(out)
+    return _ALIASES.get(key, key)
+
+
 def fetch_meters():
     out = []
     offset = 0
     while True:
         q = urllib.parse.urlencode({
-            'where': '1=1', 'outFields': 'OBJECTID,POLE_STATU,METER_TYPE',
+            'where': '1=1', 'outFields': 'OBJECTID,POLE_STATU,METER_TYPE,SUB_AREA',
             'returnGeometry': 'true', 'outSR': 4326, 'orderByFields': 'OBJECTID',
             'resultOffset': offset, 'resultRecordCount': 1000, 'f': 'geojson'})
         with urllib.request.urlopen(OAK_METERS + '?' + q, timeout=90) as r:
@@ -81,7 +119,8 @@ def fetch_meters():
         # a bad fix, and would otherwise drag a meter onto an unrelated block.
         if not c or not (-122.36 < c[0] < -122.11) or not (37.63 < c[1] < 37.89):
             continue
-        pts.append([round(c[0], 5), round(c[1], 5)])
+        pts.append([round(c[0], 5), round(c[1], 5),
+                    street_key(a.get('SUB_AREA'))])
     print('  oakland meters: %d rows -> %d active with real coordinates'
           % (len(out), len(pts)), file=sys.stderr)
     return pts
@@ -141,26 +180,36 @@ def _near(lon, lat, grid):
 
 
 def _closest(p, pts):
-    """Distance from p to the polyline, plus the signed side it falls on.
+    """Distance from p to the polyline, the side it falls on, and how far along.
 
     Sign is the cross product in metres-east / metres-north, so positive is to
     the left of the direction the line is drawn in -- the same hand convention
     build.py uses to turn a bearing into a compass letter.
+
+    The third value is metres from the start of the block, and the fourth is the
+    block's length. A meter standing at an intersection belongs to whichever of
+    the two streets it faces, and distance alone cannot tell them apart: on
+    Walker Ave a meter 23 m away landed at 0 m along the block -- round the
+    corner on the cross street -- and tagged a residential block as metered.
     """
     mx = _mx(p[1])
     px, py = p[0] * mx, p[1] * MY
-    best, side = float('inf'), 0.0
+    best, side, at = float('inf'), 0.0, 0.0
+    run = 0.0
     for a, b in zip(pts, pts[1:]):
         ax, ay = a[0] * mx, a[1] * MY
         bx, by = b[0] * mx, b[1] * MY
         dx, dy = bx - ax, by - ay
+        seg = math.hypot(dx, dy)
         L = dx * dx + dy * dy
         t = 0.0 if L == 0 else max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / L))
         d = math.hypot(px - (ax + t * dx), py - (ay + t * dy))
         if d < best:
             best = d
             side = dx * (py - ay) - dy * (px - ax)
-    return best, side
+            at = run + t * seg
+        run += seg
+    return best, side, at, run
 
 
 def _cardinal(deg):
@@ -174,19 +223,37 @@ def _cardinal(deg):
     return 'W'
 
 
-def meters_on_block(pts, grid, bearing, tol=METER_TOL_M):
+def meters_on_block(pts, grid, bearing, key, tol=METER_TOL_M):
     """Which compass sides of this block have a meter standing on them.
 
-    Returns (set of compass letters, total meters near the block). The letters
-    are empty when the block has no usable bearing, in which case the caller
-    only knows the block is metered, not which kerb -- which is still enough to
+    `key` is the block's street, normalised. A meter only counts for a block on
+    its own street: at an intersection the cross street's meters sit within a
+    few metres of this block's end, and distance alone cannot tell them apart.
+    That is how a quiet residential block on Walker Ave came to be tagged as
+    metered by a meter 23 m away and round the corner. Matching on the street
+    the city wrote on the meter removed 46% of the tags.
+
+    Returns (set of compass letters, total meters on the block). The letters are
+    empty when the block has no usable bearing, in which case the caller only
+    knows the block is metered, not which kerb -- which is still enough to
     decide whether to offer a way to pay.
     """
     hits = set()
     total = 0
+    if not key:
+        return hits, total
     for p in _near(pts[len(pts) // 2][0], pts[len(pts) // 2][1], grid):
-        d, side = _closest(p, pts)
+        if p[2] != key:
+            continue
+        d, side, at, length = _closest(p, pts)
         if d > tol:
+            continue
+        # Two blocks of the same street meet at a corner, so the name test does
+        # not separate them: a meter on the 600 block sits 28 m from the end of
+        # the 700 block and tagged both. Ignore anything projecting onto the
+        # very ends. Scaled so it cannot swallow a short block whole.
+        margin = min(END_MARGIN_M, length * 0.15)
+        if at < margin or at > length - margin:
             continue
         total += 1
         if bearing is None or side == 0:

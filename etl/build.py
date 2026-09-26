@@ -239,7 +239,7 @@ def pack(seg):
     return out
 
 
-def worth_shipping(seg):
+def has_a_rule(seg):
     """Anything with something real to tell a driver.
 
     Not just sweeping: a block in a permit zone, or one with a kerb regulation
@@ -248,9 +248,11 @@ def worth_shipping(seg):
     permit zone and 265 that carry a kerb regulation -- restrictions the driver
     is still subject to.
 
-    Also kept: a side with a note, which is a specific statement about why the
-    schedule is not known. Dropping those reports "no data" for a street that is
-    definitely swept -- and a metered block, where the thing you must do is pay.
+    Also counted: a side with a note, which is a specific statement about why the
+    schedule is not known, and a metered block, where the thing you must do is
+    pay.
+
+    This used to be the ship filter. It is now only a statistic -- see main().
     """
     if seg.get('rpp') or seg.get('paid'):
         return True
@@ -295,7 +297,8 @@ def attach_meters(seg, grid):
     if len(pts) < 2:
         return 0
     bearing = _bearing(pts) if _straightness(pts) >= 0.9 else None
-    facing, total = paid.meters_on_block(pts, grid, bearing)
+    facing, total = paid.meters_on_block(pts, grid, bearing,
+                                         paid.street_key(seg.get('street')))
     if not total:
         return 0
     tagged = False
@@ -581,7 +584,22 @@ def main():
     for city, segs in (('oakland', build_oakland()),
                        ('berkeley', build_berkeley()),
                        ('emeryville', build_emeryville())):
-        active = [s for s in segs if worth_shipping(s)]
+        # Ship every block, including the ones with nothing to say.
+        #
+        # Filtering to blocks that carry a rule looked like a free saving and
+        # was not. The app snaps to the nearest block within 60 m, so on a
+        # street the city marks exempt -- more than half of Oakland -- the
+        # nearest block in the data is a different street, and near a corner it
+        # is close enough to win. The app then names that street and prints its
+        # schedule with confidence. Standing on an unswept block and being told
+        # to move for a sweep on the next street over is the same failure as
+        # naming the wrong kerb, one level up.
+        #
+        # Keeping them also means "the city records no sweeping here" can be
+        # said about the block you are actually on, which is the answer, not
+        # the absence of one.
+        active = segs
+        with_rule = sum(1 for x in segs if has_a_rule(x))
         payload = {'city': city, 'segments': [pack(s) for s in active]}
         path = os.path.join(DATA, '%s.json' % city)
         with open(path, 'w') as fh:
@@ -592,7 +610,8 @@ def main():
         # build log used to report permit hits that were then dropped.
         summary[city] = {
             'segments': len(active),
-            'dropped_nothing_to_say': len(segs) - len(active),
+            'with_a_rule': with_rule,
+            'nothing_to_say': len(segs) - with_rule,
             'with_permit_zone': sum(1 for s in active if s.get('rpp')),
             'with_kerb_regulation': sum(1 for s in active
                                         for x in s['sides'] if x.get('curb')),

@@ -691,11 +691,28 @@ function verdictFor(side, now) {
   return { tone: 'muted', headline: 'No sweeping listed', detail: describe(side) };
 }
 
+/* Why the city says what it says. "No sweeping listed" is the same verdict for
+   all of these, but the reasons are not equally solid, and a driver deciding
+   whether to trust a negative deserves the city's own words for it. */
 var NOTES = {
-  no_time:    'The city lists a sweep day for this side but no time window. Check the sign.',
-  no_signage: 'The city records no posted signage here. The sign you see is the only authority.',
-  flagged:    'The city flagged this block for re-checking in its own data.',
-  unknown:    'We could not read a schedule for this side. Go by the sign.'
+  no_time:      'The city lists a sweep day for this side but no time window. Check the sign.',
+  no_signage:   'The city records no posted signage here. The sign you see is the only authority.',
+  flagged:      'The city flagged this block for re-checking in its own data.',
+  unknown:      'We could not read a schedule for this side. Go by the sign.',
+  /* Oakland's own no-sweep reasons, from its coded-value list. */
+  exempt:       'Oakland lists this block as exempt from sweeping.',
+  uncontrolled: 'Oakland lists this block as an “uncontrolled condition” — it runs no ' +
+                'posted sweeping route here. A sign on the street still outranks that.',
+  highway:      'Oakland records this as highway, not a swept city street.',
+  outside:      'Oakland records this block as outside the city limit, so another city ' +
+                'may sweep it on its own schedule.',
+  alley:        'Oakland records this as an alleyway, which it does not sweep.',
+  no_addresses: 'Oakland records no addresses on this side of the block.',
+  no_side:      'Oakland records that this side of the street does not exist.',
+  /* Berkeley's. */
+  opted_out:    'Berkeley records this block as opted out of mechanical sweeping.',
+  no_kerb:      'Berkeley records this block as unsweepable — no kerb, or too narrow.',
+  opt_in:       'Berkeley records sweeping here as optional, so it is not enforced.'
 };
 
 /* Both sides, always, side by side. The previous build pre-selected one and

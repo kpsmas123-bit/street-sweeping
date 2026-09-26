@@ -40,18 +40,27 @@ _NTH = {
     'F1': ([1], S.FRI),   'F2': ([2], S.FRI),   'F4': ([4], S.FRI),     'F13': ([1, 3], S.FRI),
 }
 
-# Codes that mean "no sweeping here", with the confidence they imply.
+# Codes that mean "no sweeping here", each keeping the city's own reason.
+#
+# These all produce the same verdict -- nobody is sweeping this kerb -- but the
+# reasons are not interchangeable, and flattening them to one word threw away
+# the only thing that tells a driver how much to trust it. "Exempt" is a
+# decision the city made about a street it knows; "Uncontrol Condition" (36% of
+# Oakland's day codes) is the city saying it does not run a controlled route
+# there, which is a different sentence to read under a headline that says no
+# sweeping. The domain names are quoted from the service's own StreetSweepingD
+# coded-value list.
 _NO_SWEEP = {
-    'N':     'exempt',      # No Sweeping (Exempt)
-    'NS':    'exempt',      # No Sweeping (within city limit)
-    'NS-UC': 'exempt',      # Uncontrolled condition
-    'NS-H':  'exempt',      # Highway
-    'NS-O':  'exempt',      # Outside city limit
-    'NS-A':  'exempt',      # Alleyway
-    'N-S':   'no_signage',  # No signage posted
-    'N-O':   'exempt',      # No odd addresses on this block
-    'N-E':   'exempt',      # No even addresses on this block
-    'O':     'exempt',      # "There is no this side of the street"
+    'N':     'exempt',        # No Sweeping (Exempt)
+    'NS':    'exempt',        # No Sweeping (Within City Of Oakland Limit)
+    'NS-UC': 'uncontrolled',  # No Sweeping (Uncontrol Condition)
+    'NS-H':  'highway',       # No Sweeping (HYW)
+    'NS-O':  'outside',       # No Sweeping (Outside Of The City Limit)
+    'NS-A':  'alley',         # No Sweeping (Alleyways)
+    'N-S':   'no_signage',    # No Signage
+    'N-O':   'no_addresses',  # No Odd Addresses
+    'N-E':   'no_addresses',  # No Even Addresses
+    'O':     'no_side',       # There is no this side of the street
 }
 
 # Codes that are not schedules at all -- they redirect you elsewhere.

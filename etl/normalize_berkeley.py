@@ -39,8 +39,8 @@ _IRREGULAR = {'Ind2monthly', 'Ind2weekly', 'Medians2monthly'}
 # mech_sweep -> confidence for blocks that are not enforced
 _STATUS = {
     'enforced': None,        # parse the route normally
-    'exempt': 'exempt',      # opted out
-    'excluded': 'exempt',    # no curbs / too narrow to sweep
+    'exempt': 'opted_out',   # opted out
+    'excluded': 'no_kerb',   # no curbs / too narrow to sweep
     'Commercial': None,
     'industry': None,
 }
@@ -62,7 +62,7 @@ def parse_route(code):
         if key.lower() == code.lower():
             return S.make('weekly', [], weekdays, None, None), 'no_time'
     if code in _OPTIONAL:
-        return S.NONE, 'exempt'
+        return S.NONE, 'opt_in'
     if code in _IRREGULAR:
         return S.UNKNOWN, 'unknown'
     return S.UNKNOWN, 'unknown'
@@ -229,11 +229,12 @@ def normalize(attrs, geometry, route_codes):
             })
         return _segment(attrs, geometry, sides, route_codes)
 
-    if forced in ('exempt', 'unknown') and status not in ('enforced', 'Commercial', 'industry'):
+    if forced in ('opted_out', 'no_kerb', 'unknown') and \
+            status not in ('enforced', 'Commercial', 'industry'):
         sides.append({
             'side': 'both',
             'addr_from': None, 'addr_to': None,
-            'schedule': S.NONE if forced == 'exempt' else S.UNKNOWN,
+            'schedule': S.UNKNOWN if forced == 'unknown' else S.NONE,
             'confidence': forced,
             'raw': {'mech_sweep': status, 'routes': route_codes},
         })

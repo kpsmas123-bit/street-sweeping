@@ -49,7 +49,13 @@ Done and deployed:
   standing on them (plus 449 blocks metered but kerb unknown) and 391 Berkeley
   blocks inside a goBerkeley paid area, with its rate and posted limit. Never
   on a red kerb or a bus stop.
-- Spatial tiles (~30 kB per load instead of 2.6 MB), city manifest.
+- Spatial tiles (one ~22 kB cell per load instead of 5.4 MB), city manifest.
+- **Every block ships**, including the ones with no rule at all. See the note in
+  `main()`: filtering them out meant the app snapped to a neighbouring street
+  and printed its schedule with confidence.
+- Each no-sweep block carries the city's own reason -- exempt, uncontrolled,
+  highway, outside the city, alleyway, no signage -- instead of one flat
+  "exempt".
 - A dark map overlay for confirming the block.
 
 ## Still outstanding
@@ -112,6 +118,16 @@ Every one of these was a real bug that shipped:
 - Oakland's meter layer holds 8,107 rows and only 4,401 are real: the spares
   sit at 0,0, so anything that does not filter on `POLE_STATU` and a sane
   bounding box drags meters onto blocks at null island.
+- A meter near a block is not a meter **on** it. Match on `SUB_AREA`, the street
+  the city wrote on the meter (filled on all 4,401), and still ignore the last
+  8 m of each end, or a corner meter tags the block round the corner and the
+  next block along the same street. Distance alone over-tagged by 58%.
+- Oakland's meter inventory still calls International Blvd "E 14th St" -- 147
+  meters, the largest single unmatched group. The sweeping data uses the new
+  name.
+- `NS-UC` is 36% of Oakland's day codes and its domain name is "No Sweeping
+  (Uncontrol Condition)" -- the city saying it runs no controlled route there,
+  which is not the same claim as "exempt".
 - A meter point is on one kerb; a goBerkeley polygon is a neighbourhood up to
   a kilometre across. They cannot be worded the same way.
 - Ship filters must not ask only "is it swept" — a permit zone or a kerb
