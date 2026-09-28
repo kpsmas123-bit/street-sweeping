@@ -26,6 +26,11 @@ Done and deployed:
   drives the kerb actually being swept.
 - Parked session, live countdown, manual meter/permit limits, walk-back
   directions, NFC entry point, native timer via Shortcuts.
+- **One rules list** under the verdict: every rule the cities know about this
+  kerb -- kerb type, sweeping, paid parking, permit zone -- one row each, with
+  the tool for that rule on that row (Pay on the metered row, Start 2h on the
+  permit row). A kerb you cannot park at stays above the verdict, because it
+  outranks it.
 - Two buttons, always: **Drop pin** and **Set timer**. Map and Compass are
   quiet secondaries below them; the calendar export is a footer link, because
   the owner does not use a calendar and said so.

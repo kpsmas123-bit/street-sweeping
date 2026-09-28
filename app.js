@@ -1264,7 +1264,10 @@ function renderCurb() {
   if (!el) return;
   var side = placed || suggestion ? current.s[chosen] : null;
   var c = side && side.b;
-  if (!c) { el.hidden = true; return; }
+  /* Only a kerb you cannot park at belongs above the verdict, because it
+     outranks it. A kerb you can park at is one rule among others and lives in
+     the rules list below. */
+  if (!c || c.k !== 'no_park') { el.hidden = true; return; }
 
   el.hidden = false;
   el.setAttribute('data-kind', c.k);
@@ -1309,81 +1312,139 @@ function paidHere() {
   return null;
 }
 
-function renderPaid() {
-  var el = $('paid');
-  if (!el) return;
-  var p = placed ? paidHere() : null;
-  if (!p) { el.hidden = true; return; }
+/* --------------------------------------------------------------- the rules */
+/* Everything the cities know about this kerb, in one list, with the tool for
+   each rule sitting on the row it belongs to.
 
-  el.hidden = false;
-  el.innerHTML = '';
-  var line = document.createElement('span');
-  line.className = 'paid-what';
-  if (p.kind === 'meter') {
-    line.textContent = 'Metered kerb — you have to pay to park here.';
+   This is what the app is for: park, tap the sticker, and see what you are
+   subject to here -- swept, metered, permit, time-limited, or nothing -- with
+   the one action that answers it beside it. The verdict above is "when must I
+   move"; this is what produces that answer. */
+function rulesFor(side, now) {
+  var out = [];
+
+  /* A kerb you cannot park at outranks everything, so it is shown above the
+     verdict by renderCurb and not repeated here. A kerb you CAN park at is a
+     rule like any other. */
+  if (side.b && side.b.k !== 'no_park') {
+    out.push({
+      label: 'Kerb', tone: 'ok', text: side.b.t,
+      note: side.b.d ? side.b.d + ' \u00b7 the city does not publish the hours' : null
+    });
+  }
+
+  var v = verdictFor(side, now);
+  var sweep = { label: 'Street sweeping', tone: v.tone };
+  if (side.k === 'x') {
+    sweep.text = 'None recorded on this block';
+    sweep.tone = 'ok';
+    sweep.note = NOTES[side.c] || null;
+  } else if (side.k === '?') {
+    sweep.text = side.x ? 'Swept — the week is not stated' : 'Not readable — go by the sign';
+    sweep.tone = 'soon';
+    sweep.note = side.x || NOTES[side.c] || null;
   } else {
-    var bits = [];
-    if (p.rate) bits.push(p.rate + '/hour');
-    if (p.limit) bits.push(p.limit.toLowerCase() + ' limit');
-    line.textContent = 'Paid parking area' + (p.name ? ' — ' + p.name : '') +
-      (bits.length ? ', ' + bits.join(', ') : '') + '.';
+    sweep.text = describe(side);
+    sweep.note = NOTES[side.c] || null;
   }
-  el.appendChild(line);
+  out.push(sweep);
 
-  var hint = document.createElement('span');
-  hint.className = 'paid-hint';
-  /* The district polygon covers side streets that have no meter on them, so it
-     cannot promise this kerb is metered -- only the sign can. */
-  hint.textContent = p.kind === 'meter'
-    ? 'The zone number is on the meter.'
-    : 'Only if there is a meter or a sign on this block.';
-  el.appendChild(hint);
-
-  if (p.note) {
-    var n = document.createElement('span');
-    n.className = 'paid-hint';
-    n.textContent = p.note;
-    el.appendChild(n);
+  var p = paidHere();
+  if (p) {
+    var pay = { label: 'Paid parking', tone: 'ok', tool: 'pay' };
+    if (p.kind === 'meter') {
+      pay.text = 'Metered — you have to pay here';
+      pay.note = 'The zone number is on the meter.';
+    } else {
+      var bits = [];
+      if (p.rate) bits.push(p.rate + '/hour');
+      if (p.limit) bits.push(p.limit.toLowerCase() + ' limit');
+      pay.text = (p.name ? p.name + ' area' : 'Paid area') +
+                 (bits.length ? ' \u00b7 ' + bits.join(', ') : '');
+      /* The district polygon covers side streets with no meter on them, so it
+         cannot promise this kerb is metered -- only the sign can. */
+      pay.note = p.note || 'Only if there is a meter or a sign on this block.';
+    }
+    out.push(pay);
   }
+
+  var st = rppStatus(current, now);
+  if (st) {
+    out.push({
+      label: 'Permit zone',
+      tone: st.enforcing ? 'soon' : 'ok',
+      text: st.unknownRule ? 'Area ' + st.area
+                           : 'Area ' + st.area + ' \u00b7 ' + (st.limit / 60) +
+                             'h without a permit',
+      note: st.unknownRule
+        ? 'The city publishes no hours or limit for this zone \u2014 the sign does.'
+        : (st.note || (st.enforcing ? 'Enforcing now.' : 'Not enforcing now.')),
+      tool: st.enforcing ? 'limit' : null,
+      limit: st.limit,
+      area: st.area
+    });
+  }
+  return out;
 }
 
-function renderPermit() {
-  var el = $('permit');
+function renderRules() {
+  var el = $('rules');
   if (!el) return;
-  var st = current ? rppStatus(current, new Date()) : null;
-  if (!st || !placed) { el.hidden = true; return; }
+  if (!placed && !suggestion) { el.hidden = true; return; }
 
-  el.hidden = false;
+  var rows = rulesFor(current.s[chosen], new Date());
+  el.hidden = !rows.length;
   el.innerHTML = '';
-  el.setAttribute('data-on', String(st.enforcing === true));
 
-  var line = document.createElement('span');
-  line.textContent = st.text +
-    (st.unknownRule ? '' : (st.enforcing ? ' · enforcing now' : ' · not enforcing now'));
-  el.appendChild(line);
-  if (st.note) {
-    var n = document.createElement('span');
-    n.className = 'permit-note';
-    n.textContent = st.note;
-    el.appendChild(n);
-  }
-
-  /* The permit limit is a timer, so offer it as one rather than making the
-     driver work out the arithmetic and set it by hand. */
   var sess = loadSession();
   var hasLimit = sess && sess.limitUntil && sess.segId === current.i &&
                  sess.limitUntil > Date.now();
-  if (st.enforcing && !hasLimit) {
-    var b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'chip chip--on';
-    b.textContent = 'Start ' + (st.limit / 60) + 'h';
-    b.onclick = function () {
-      setLimit(st.limit, 'Area ' + st.area + ' ' + (st.limit / 60) + 'h');
-      renderPermit();
-    };
-    el.appendChild(b);
-  }
+
+  rows.forEach(function (r) {
+    var row = document.createElement('div');
+    row.className = 'rule';
+    row.setAttribute('data-tone', r.tone || 'ok');
+
+    var main = document.createElement('div');
+    main.className = 'rule-main';
+    var lab = document.createElement('span');
+    lab.className = 'rule-label';
+    lab.textContent = r.label;
+    var txt = document.createElement('span');
+    txt.className = 'rule-text';
+    txt.textContent = r.text;
+    main.appendChild(lab);
+    main.appendChild(txt);
+    if (r.note) {
+      var n = document.createElement('span');
+      n.className = 'rule-note';
+      n.textContent = r.note;
+      main.appendChild(n);
+    }
+    row.appendChild(main);
+
+    /* The tool for this rule, on this rule. */
+    if (r.tool === 'pay') {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'chip chip--pm';
+      b.textContent = 'Pay';
+      b.onclick = openParkMobile;
+      row.appendChild(b);
+    } else if (r.tool === 'limit' && !hasLimit) {
+      var t = document.createElement('button');
+      t.type = 'button';
+      t.className = 'chip chip--on';
+      t.textContent = 'Start ' + (r.limit / 60) + 'h';
+      t.onclick = function () {
+        setLimit(r.limit, 'Area ' + r.area + ' ' + (r.limit / 60) + 'h');
+        renderRules();
+        renderLimitRow();
+      };
+      row.appendChild(t);
+    }
+    el.appendChild(row);
+  });
 }
 
 /* --------------------------------------------------------------- the camera */
@@ -2036,9 +2097,8 @@ function renderVerdict() {
     v.hidden = true;
     $('limits').hidden = true;
     $('confirm').hidden = true;
-    $('permit').hidden = true;
     $('curb').hidden = true;
-    if ($('paid')) $('paid').hidden = true;
+    if ($('rules')) $('rules').hidden = true;
     $('prompt').textContent = current.s.length > 1
       ? 'Tap the kerb your car is on. Check the nearest house number.'
       : (current.s[0] && current.s[0].d === 'both'
@@ -2084,16 +2144,15 @@ function renderVerdict() {
       : r.detail;
   }
 
-  var note = side.x || NOTES[side.c];
-  $('note').hidden = !note;
-  if (note) $('note').textContent = note;
+  /* The caveat about this side now sits on the rule it qualifies, in the list
+     below, rather than twice on one screen. */
+  $('note').hidden = true;
   $('remind').hidden = !icsRule(side);
   $('forget').hidden = !loadSession();
   renderTimerButton();
   $('showcompass').hidden = compassOn || !current.s.some(function (x) { return x.f; });
   renderLimitRow();
-  renderPermit();
-  renderPaid();
+  renderRules();
   renderCurb();
 }
 
@@ -2149,19 +2208,10 @@ function fmtClock(d) {
 /* A meter, a permit zone, or a ParkMobile session is a second clock the city
    data knows nothing about. One tap sets it; whichever deadline lands first is
    the one the headline counts down to. */
-/* Is there a second clock on this block at all -- a meter, a permit zone, a
-   posted time limit? The limit chips are the answer to one, and on a plain
-   residential block they are three buttons asking a question nobody asked.
-   They stay reachable behind one quiet link, because a posted sign the data
-   does not have is still a reason to want a timer. */
-function limitContext() {
-  if (!current) return null;
-  if (paidHere()) return true;
-  if (rppStatus(current, new Date())) return true;
-  var side = (placed || suggestion) ? current.s[chosen] : null;
-  return !!(side && side.b && side.b.k === 'limited');
-}
-
+/* The rules list carries the tool for each rule it names -- Pay on the metered
+   row, Start 2h on the permit row -- so these lengths are the general case
+   behind one quiet link: a posted sign the cities have not digitised is still
+   a reason to want a countdown. */
 var limitsOpenFor = null;      /* the block the driver asked to see them on */
 
 function renderLimitRow() {
@@ -2171,7 +2221,7 @@ function renderLimitRow() {
   row.hidden = !placed;
   row.innerHTML = '';
 
-  if (!active && !limitContext() && limitsOpenFor !== current.i) {
+  if (!active && limitsOpenFor !== current.i) {
     var more = document.createElement('button');
     more.type = 'button';
     more.className = 'link';
@@ -2205,22 +2255,13 @@ function renderLimitRow() {
   label.textContent = 'meter / permit limit';
   row.appendChild(label);
 
-  /* ParkMobile has no public API, and automating a signed-in account would mean
-     handling someone's credentials and breaking their terms. So this is a plain
-     hand-off: open the app to pay, and the limit you set here counts the same
-     session down alongside the sweeping schedule.
+  /* The way to pay sits on the paid-parking row of the rules list, beside the
+     rule it answers, rather than floating here next to the lengths.
 
-     Offered only where the city's own data says there is something to pay --
-     see paidHere(). It used to appear on every block in three cities, which on
-     a free residential street is an instruction to do nothing. */
-  if (paidHere()) {
-    var pm = document.createElement('button');
-    pm.type = 'button';
-    pm.className = 'chip chip--pm';
-    pm.textContent = 'Pay · ParkMobile';
-    pm.onclick = openParkMobile;
-    row.appendChild(pm);
-  }
+     ParkMobile has no public API and automating a signed-in account would mean
+     handling someone's credentials, so it stays a plain hand-off: open the app
+     to pay, and the limit set here counts that session down alongside the
+     sweeping schedule. */
 }
 
 /* --------------------------------------------------------------------- map */
