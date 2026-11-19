@@ -1,11 +1,11 @@
 {
-  "name": "Street Sweeping — Berkeley & Oakland",
+  "name": "Street Sweeping — Berkeley, Oakland & Emeryville",
   "short_name": "Sweeping",
   "start_url": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#f2f2f7",
-  "theme_color": "#f2f2f7",
+  "background_color": "#000000",
+  "theme_color": "#000000",
   "description": "Check whether your parked car is about to be swept. Advisory only — posted signs control.",
   "icons": [
     { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },

@@ -1326,16 +1326,20 @@ function rulesFor(side, now) {
   /* A kerb you cannot park at outranks everything, so it is shown above the
      verdict by renderCurb and not repeated here. A kerb you CAN park at is a
      rule like any other. */
-  if (side.b && side.b.k !== 'no_park') {
+  if (side && side.b && side.b.k !== 'no_park') {
     out.push({
       label: 'Kerb', tone: 'ok', text: side.b.t,
       note: side.b.d ? side.b.d + ' \u00b7 the city does not publish the hours' : null
     });
   }
 
-  var v = verdictFor(side, now);
-  var sweep = { label: 'Street sweeping', tone: v.tone };
-  if (side.k === 'x') {
+  /* Sweeping is per side; before a side is known it is the headline above,
+     stated for both kerbs, and does not need a row that would have to hedge. */
+  var v = side ? verdictFor(side, now) : null;
+  var sweep = { label: 'Street sweeping', tone: v ? v.tone : 'ok' };
+  if (!side) {
+    sweep = null;
+  } else if (side.k === 'x') {
     sweep.text = 'None recorded on this block';
     sweep.tone = 'ok';
     sweep.note = NOTES[side.c] || null;
@@ -1347,7 +1351,7 @@ function rulesFor(side, now) {
     sweep.text = describe(side);
     sweep.note = NOTES[side.c] || null;
   }
-  out.push(sweep);
+  if (sweep) out.push(sweep);
 
   var p = paidHere();
   if (p) {
@@ -1390,9 +1394,9 @@ function rulesFor(side, now) {
 function renderRules() {
   var el = $('rules');
   if (!el) return;
-  if (!placed && !suggestion) { el.hidden = true; return; }
 
-  var rows = rulesFor(current.s[chosen], new Date());
+  /* With no side yet, list only what holds for the whole block. */
+  var rows = rulesFor((placed || suggestion) ? current.s[chosen] : null, new Date());
   el.hidden = !rows.length;
   el.innerHTML = '';
 
@@ -1431,7 +1435,7 @@ function renderRules() {
       b.textContent = 'Pay';
       b.onclick = openParkMobile;
       row.appendChild(b);
-    } else if (r.tool === 'limit' && !hasLimit) {
+    } else if (r.tool === 'limit' && !hasLimit && placed) {
       var t = document.createElement('button');
       t.type = 'button';
       t.className = 'chip chip--on';
@@ -1685,12 +1689,17 @@ function drawScene(lon, lat) {
   /* Stroke widths are in SVG units, so they have to track the scale too or a
      zoomed-out block gets a motorway-wide road. */
   $('road').style.strokeWidth = (HALF_ROAD * 2 * sc.scale).toFixed(1);
+  /* Pavement either side of the roadway, 2.4 m deep, so the kerb line sits on
+     an edge rather than floating on black. */
+  $('gutter').style.strokeWidth = ((HALF_ROAD + 2.4) * 2 * sc.scale).toFixed(1);
   $('kerbA').style.strokeWidth = Math.max(3, sc.scale).toFixed(1);
   $('kerbB').style.strokeWidth = Math.max(3, sc.scale).toFixed(1);
   /* Roadway and centreline run the full street; the coloured kerbs stay on this
      block alone, because only this block's schedule is known. */
-  $('road').setAttribute('d', pathOf(through.map(sc.project)));
-  $('centerline').setAttribute('d', pathOf(through.map(sc.project)));
+  var throughPath = pathOf(through.map(sc.project));
+  $('gutter').setAttribute('d', throughPath);
+  $('road').setAttribute('d', throughPath);
+  $('centerline').setAttribute('d', throughPath);
 
   /* Which hand of the line each side sits on, so the kerb is drawn where that
      side actually is rather than arbitrarily left or right. */
@@ -2023,7 +2032,7 @@ function moveCar() {
      SVG transform attribute as well just loses to this one. */
   /* Never shrink the car past readability: on a long block the view zooms out
      far enough that a true-to-scale car becomes a speck. */
-  var z = scene ? Math.max(0.8, scene.scale / 5) : 1;
+  var z = scene ? Math.max(1.1, scene.scale / 4) : 1.1;
   /* carArrival slides it back down the street during the fly-in, so it drives
      into the space instead of materialising in it. */
   var rad = angle * Math.PI / 180;
@@ -2090,21 +2099,117 @@ function placeCar(i) {
 }
 
 
+/* Rank of a tone: the side in the most trouble is the one the headline leads
+   with, because that is the ticket you are about to get. */
+var TONE_RANK = { now: 3, soon: 2, muted: 1, ok: 0 };
+
+/* The answer before the question. With no side confirmed the app still knows
+   everything about both kerbs; the only unknown is which one the car is on.
+   Hiding the verdict until the tap buried the one fact that matters -- "one
+   side of this block is being swept right now" -- in a 13px label. Lead with
+   the worst case across the sides, state each side's own verdict beside it,
+   and let the tap narrow it. Nothing is pre-selected: the car stays in the
+   middle of the road until the driver places it. */
+function summarizeSides(now) {
+  var worst = null, worstIdx = -1;
+  current.s.forEach(function (side, i) {
+    var v = verdictFor(side, now);
+    if (!worst || TONE_RANK[v.tone] > TONE_RANK[worst.tone]) { worst = v; worstIdx = i; }
+  });
+  if (!worst) return null;
+  var tones = current.s.map(function (s) { return verdictFor(s, now).tone; });
+  var allSame = tones.every(function (t) { return t === tones[0]; });
+  var who = sideName(current.s[worstIdx], worstIdx);
+  var headline, sub;
+  if (current.s.length === 1 || allSame && worst.tone === 'ok') {
+    headline = worst.headline;
+    var details = current.s.map(function (s) { return verdictFor(s, now).detail; });
+    var sameDetail = details.every(function (d) { return d === details[0]; });
+    /* "Both sides. Next sweep Friday" when the other side's next sweep is a
+       different day states one side's date for both. Name each side's date. */
+    sub = current.s.length === 1 ? worst.detail
+        : sameDetail ? 'Both sides. ' + worst.detail
+        : current.s.slice(0, 2).map(function (s, i) {
+            return sideName(s, i) + ': ' + details[i].replace(/^Next sweep /, '').replace(/\.$/, '');
+          }).join(' · ') + '.';
+  } else if (worst.tone === 'now' || worst.tone === 'soon') {
+    /* "odd side" reads as prose; "Side A" is a name and keeps its capital. */
+    headline = worst.headline + ' — ' +
+               who.replace(/^Side /, 'side ').replace(/^(Odd|Even)/, function (m) { return m.toLowerCase(); });
+    sub = worst.detail + ' Other side: ' +
+          verdictFor(current.s[worstIdx === 0 ? 1 : 0], now).headline.toLowerCase() + '.';
+  } else {
+    headline = 'Check both kerbs';
+    sub = current.s.slice(0, 2).map(function (s, i) {
+      return sideName(s, i) + ': ' + verdictFor(s, now).headline.toLowerCase();
+    }).join(' · ') + '.';
+  }
+  return { tone: worst.tone, headline: headline, sub: sub };
+}
+
+function sideName(side, i) {
+  return side.d === 'odd' ? 'Odd side' : side.d === 'even' ? 'Even side'
+       : side.d === 'both' ? 'Both sides' : 'Side ' + (i === 0 ? 'A' : 'B');
+}
+
+/* The two kerbs as two full cards in the panel, each stating its own verdict,
+   range and compass. These are the question -- "which of these is you?" -- and
+   also the complete answer for whichever it turns out to be. */
+function renderSideCards() {
+  var wrap = $('sides');
+  if (!wrap) return;
+  if (placed || suggestion || current.s.length > 2) { wrap.hidden = true; return; }
+  var now = new Date();
+  wrap.hidden = false;
+  wrap.innerHTML = '';
+  current.s.slice(0, 2).forEach(function (side, i) {
+    var v = verdictFor(side, now);
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'side';
+    b.setAttribute('data-tone', v.tone);
+    b.style.setProperty('--i', String(i));
+    var meta = [];
+    if (side.a) meta.push(tidyRange(side.a));
+    if (side.f) meta.push('faces ' + FACING[side.f]);
+    if (side.b && side.b.k === 'no_park') meta.unshift('No parking');
+    b.innerHTML =
+      '<span class="side-top"><span class="side-name">' + esc(sideName(side, i)) + '</span>' +
+      '<span class="side-dot"></span></span>' +
+      '<span class="side-state">' + esc(v.headline) + '</span>' +
+      '<span class="side-detail">' + esc(v.detail) + '</span>' +
+      (meta.length ? '<span class="side-meta">' + esc(meta.join(' · ')) + '</span>' : '') +
+      '<span class="side-cta">' + (current.s.length > 1 ? 'I’m here' : 'Confirm') + '</span>';
+    b.onclick = function () { placeCar(i); };
+    wrap.appendChild(b);
+  });
+}
+
 function renderVerdict() {
   $('street').textContent = current.n || 'This block';
   var v = $('verdict');
+  renderSideCards();
   if (!placed && !suggestion) {
-    v.hidden = true;
+    var sum = current.s.length <= 2 ? summarizeSides(new Date()) : null;
+    v.hidden = !sum;
+    if (sum) {
+      $('headline').textContent = sum.headline;
+      $('headline').dataset.tone = sum.tone;
+      $('sub').textContent = sum.sub;
+    }
     $('limits').hidden = true;
     $('confirm').hidden = true;
     $('curb').hidden = true;
-    if ($('rules')) $('rules').hidden = true;
     $('prompt').textContent = current.s.length > 1
-      ? 'Tap the kerb your car is on. Check the nearest house number.'
+      ? 'Which kerb is your car on? Match the nearest house number.'
       : (current.s[0] && current.s[0].d === 'both'
-          ? 'One schedule covers both sides of this block. Tap to confirm.'
-          : 'Only one kerb is recorded here. Tap to confirm.');
+          ? 'One schedule covers both sides of this block.'
+          : 'Only one kerb is recorded here.');
     $('remind').hidden = true;
+    $('note').hidden = true;
+    /* Rules that do not depend on the side -- a paid district, a permit zone --
+       are known already, so they show now rather than after the tap. */
+    renderRules();
     /* The two buttons stay, but with nothing chosen there is no deadline to
        carry, so the timer goes back to its plain label. */
     renderTimerButton();
@@ -2423,7 +2528,7 @@ function locate() {
 /* Nothing to draw: hide the car rather than leaving it adrift on black, which
    reads as a broken screen rather than an empty one. */
 function clearStage() {
-  ['road', 'centerline', 'kerbA', 'kerbB'].forEach(function (id) {
+  ['gutter', 'road', 'centerline', 'kerbA', 'kerbB'].forEach(function (id) {
     var el = $(id);
     if (el) el.setAttribute('d', '');
   });

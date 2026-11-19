@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1">
-<meta name="theme-color" content="#0b0d10">
+<meta name="theme-color" content="#000000">
 <!-- GitHub Pages cannot set response headers, so this is the only CSP available.
      It cannot express frame-ancestors, but it does constrain what a swapped CDN
      script could do: connect-src 'self' means it cannot POST the stored parked
@@ -17,7 +17,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.css"
       integrity="sha384-K282sW/zFjTkrjR/+yr1H+gCukuy4OEYrkXRybV88g7pk+kZZYpNV6SAV59NcgFg"
       crossorigin="anonymous" referrerpolicy="no-referrer">
-<link rel="stylesheet" href="style.css?v=39">
+<link rel="stylesheet" href="style.css?v=40">
 </head>
 <body>
 
@@ -29,21 +29,62 @@
          aria-hidden="true">
       <defs>
         <linearGradient id="fade" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0"   stop-color="#0b0d10" stop-opacity="1"/>
-          <stop offset=".18" stop-color="#0b0d10" stop-opacity="0"/>
-          <stop offset=".82" stop-color="#0b0d10" stop-opacity="0"/>
-          <stop offset="1"   stop-color="#0b0d10" stop-opacity="1"/>
+          <stop offset="0"    stop-color="#000" stop-opacity="1"/>
+          <stop offset=".16"  stop-color="#000" stop-opacity="0"/>
+          <stop offset=".84"  stop-color="#000" stop-opacity="0"/>
+          <stop offset="1"    stop-color="#000" stop-opacity="1"/>
         </linearGradient>
+        <radialGradient id="ambient" cx="50%" cy="42%" r="70%">
+          <stop offset="0"  stop-color="#1a1d22"/>
+          <stop offset="1"  stop-color="#000"/>
+        </radialGradient>
         <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
-          <feGaussianBlur stdDeviation="7" result="b"/>
+          <feGaussianBlur stdDeviation="6" result="b"/>
           <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
         </filter>
+        <filter id="soft" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur stdDeviation="1.8"/>
+        </filter>
+        <filter id="lamp" x="-200%" y="-200%" width="500%" height="500%">
+          <feGaussianBlur stdDeviation="1.4"/>
+        </filter>
+        <!-- Asphalt: a fine speckle so the roadway reads as a surface, not a bar. -->
+        <pattern id="asphalt" width="7" height="7" patternUnits="userSpaceOnUse">
+          <rect width="7" height="7" fill="#1b1e23"/>
+          <circle cx="1.2" cy="2.1" r=".55" fill="#23272d"/>
+          <circle cx="4.6" cy="5.3" r=".5"  fill="#15181c"/>
+          <circle cx="5.8" cy="1.4" r=".4"  fill="#20242a"/>
+          <circle cx="2.9" cy="4.2" r=".35" fill="#272b32"/>
+        </pattern>
+        <!-- Car paint: light from the top-left, a metallic falloff to the right. -->
+        <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0"   stop-color="#ffffff"/>
+          <stop offset=".45" stop-color="#eef0f3"/>
+          <stop offset="1"   stop-color="#b9bfc8"/>
+        </linearGradient>
+        <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0"   stop-color="#5d6b80"/>
+          <stop offset=".35" stop-color="#1c2330"/>
+          <stop offset="1"   stop-color="#0d1118"/>
+        </linearGradient>
+        <linearGradient id="roofglass" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0"   stop-color="#2a3240"/>
+          <stop offset=".5"  stop-color="#0f141b"/>
+          <stop offset="1"   stop-color="#1d2430"/>
+        </linearGradient>
+        <linearGradient id="sweeperPaint" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0"  stop-color="#ffd166"/>
+          <stop offset="1"  stop-color="#f29a1f"/>
+        </linearGradient>
       </defs>
+
+      <rect class="ambient" x="0" y="0" width="360" height="460" fill="url(#ambient)"/>
 
       <!-- Everything below is drawn from the block's real geometry at load.
            The camera group is what flies; the geometry underneath never moves. -->
       <g id="camera">
       <g id="context" class="context"></g>
+      <path id="gutter" class="gutter" d=""></path>
       <path id="road" class="road" d=""></path>
       <path id="centerline" class="centerline" d=""></path>
       <path id="kerbA" class="kerb" d=""></path>
@@ -52,17 +93,43 @@
       <!-- A sweeper that actually drives the kerb being swept. Whimsy that also
            answers the question: it shows you WHICH side is in trouble. -->
       <g id="sweeper" class="sweeper" hidden>
+        <ellipse class="sweep-shadow" cx=".8" cy="1" rx="6.4" ry="11.6"/>
         <ellipse class="sweep-dust" cx="0" cy="9" rx="9" ry="5"/>
-        <rect class="sweep-body" x="-5.5" y="-10" width="11" height="20" rx="3"/>
-        <rect class="sweep-cab" x="-4" y="-7.5" width="8" height="6" rx="2"/>
-        <circle class="sweep-brush" cx="0" cy="8" r="3.6"/>
+        <circle class="sweep-brush" cx="-3.4" cy="7.6" r="3.2"/>
+        <circle class="sweep-brush sweep-brush--r" cx="3.4" cy="7.6" r="3.2"/>
+        <rect class="sweep-body" x="-5.2" y="-10" width="10.4" height="20" rx="2.6"/>
+        <rect class="sweep-hopper" x="-4.2" y="-2" width="8.4" height="9" rx="1.4"/>
+        <rect class="sweep-cab" x="-4" y="-8" width="8" height="5.4" rx="1.6"/>
+        <rect class="sweep-beacon" x="-1" y="-9.4" width="2" height="1.2" rx=".5"/>
       </g>
 
+      <!-- The car. Front is -y; moveCar rotates the group to the kerb's direction. -->
       <g id="car" class="car">
-        <rect class="car-body" x="-5" y="-11" width="10" height="22" rx="3"/>
-        <rect class="car-glass" x="-3.6" y="-7" width="7.2" height="5.5" rx="1.6"/>
-        <rect class="car-glass" x="-3.6" y="2.6" width="7.2" height="4.6" rx="1.6"/>
-        <rect class="car-roof" x="-3.2" y="-1" width="6.4" height="3.4" rx="1.4"/>
+        <ellipse class="car-shadow" cx=".9" cy="1.4" rx="6.4" ry="12.4"/>
+        <g class="car-shell">
+          <rect class="car-wheel" x="-5.7" y="-7.6" width="1.7" height="3.8" rx=".55"/>
+          <rect class="car-wheel" x="4"    y="-7.6" width="1.7" height="3.8" rx=".55"/>
+          <rect class="car-wheel" x="-5.7" y="4.2"  width="1.7" height="3.8" rx=".55"/>
+          <rect class="car-wheel" x="4"    y="4.2"  width="1.7" height="3.8" rx=".55"/>
+          <path class="car-body"
+                d="M-3.9,-11 Q0,-11.7 3.9,-11 Q5,-10.5 5,-8.8 L5,9.2 Q5,10.8 3.6,11 L-3.6,11 Q-5,10.8 -5,9.2 L-5,-8.8 Q-5,-10.5 -3.9,-11Z"/>
+          <path class="car-outline"
+                d="M-3.9,-11 Q0,-11.7 3.9,-11 Q5,-10.5 5,-8.8 L5,9.2 Q5,10.8 3.6,11 L-3.6,11 Q-5,10.8 -5,9.2 L-5,-8.8 Q-5,-10.5 -3.9,-11Z"/>
+          <rect class="car-mirror" x="-6.4" y="-4.3" width="1.6" height="1.05" rx=".4"/>
+          <rect class="car-mirror" x="4.8"  y="-4.3" width="1.6" height="1.05" rx=".4"/>
+          <path class="car-glass car-wind" d="M-3.7,-5.3 L3.7,-5.3 L3.25,-1.5 L-3.25,-1.5Z"/>
+          <rect class="car-roof" x="-3.3" y="-1.5" width="6.6" height="4.3" rx=".7"/>
+          <path class="car-glass car-rear" d="M-3.25,2.8 L3.25,2.8 L3.7,6.5 L-3.7,6.5Z"/>
+          <path class="car-crease" d="M-2.3,-10.2 L-1.6,-6 M2.3,-10.2 L1.6,-6"/>
+          <path class="car-sheen" d="M-4.35,-8.6 L-4.35,8.8"/>
+          <rect class="car-head" x="-4.4" y="-11.25" width="2.3" height=".85" rx=".35"/>
+          <rect class="car-head" x="2.1"  y="-11.25" width="2.3" height=".85" rx=".35"/>
+          <rect class="car-tail" x="-4.3" y="10.35" width="8.6" height=".7" rx=".3"/>
+        </g>
+        <g class="car-beams">
+          <rect class="car-beam" x="-4.6" y="-13.2" width="2.8" height="2.4" rx="1"/>
+          <rect class="car-beam" x="1.8"  y="-13.2" width="2.8" height="2.4" rx="1"/>
+        </g>
       </g>
 
       </g>
@@ -86,6 +153,7 @@
 
   <!-- Verdict + actions -->
   <section id="panel" class="panel" aria-live="polite">
+    <div class="grip" aria-hidden="true"></div>
     <div id="status" class="status" role="status">Finding your spot…</div>
 
     <div id="recall" class="recall" hidden></div>
@@ -93,17 +161,21 @@
 
     <div id="detail" class="detail" hidden>
       <h1 id="street">—</h1>
-      <p id="prompt" class="prompt">Tap the kerb your car is on.</p>
 
       <div id="curb" class="curb" hidden></div>
-
-      <div id="confirm" class="confirm" hidden></div>
 
       <div id="verdict" class="verdict" hidden>
         <p id="headline" class="headline">—</p>
         <p id="sub" class="sub"></p>
         <p id="note" class="note" hidden></p>
       </div>
+
+      <p id="prompt" class="prompt">Tap the kerb your car is on.</p>
+
+      <!-- Both kerbs, each with its own answer. Tapping one is the confirmation. -->
+      <div id="sides" class="sides" hidden></div>
+
+      <div id="confirm" class="confirm" hidden></div>
 
       <div id="overflow" class="overflow" hidden></div>
 
@@ -146,6 +218,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.js"
         integrity="sha384-KKgyz2mG25bKJ1O2PyqTJPlAF8Kw2BpDmsLTNBXslICOBvhTAyF5F0XhLWF2ZovY"
         crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-<script src="app.js?v=39"></script>
+<script src="app.js?v=40"></script>
 </body>
 </html>

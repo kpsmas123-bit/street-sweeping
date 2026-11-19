@@ -1,19 +1,25 @@
-/* Dark, quiet, glanceable. One bright thing on screen at a time: the kerb that
-   matters. Sized for a phone held one-handed at the kerb. */
+/* Black, precise, glanceable -- the instrument-cluster register. Thin type,
+   hairline borders, one bright thing on screen at a time: the kerb that
+   matters. Sized for a phone held one-handed at the kerb in daylight. */
 :root {
-  --bg: #0b0d10;
-  --surface: #14171c;
-  --surface-2: #1c2027;
-  --label: #f2f4f7;
-  --label-2: #98a1ae;
-  --label-3: #5d6673;
-  --hair: #262b33;
-  --green: #32d74b;
-  --amber: #ff9f0a;
+  --bg: #000000;
+  --surface: #0e0f11;
+  --surface-2: #171920;
+  --surface-3: #20232b;
+  --label: #ffffff;
+  --label-2: #a6abb4;
+  --label-3: #666c76;
+  --hair: #24272e;
+  --hair-2: #30343d;
+  --green: #30d158;
+  --amber: #ffb340;
   --red: #ff453a;
-  --blue: #0a84ff;
-  --road: #1a1e25;
-  --radius: 16px;
+  --blue: #3e6ae1;
+  --road: #1b1e23;
+  --radius: 14px;
+  --radius-s: 8px;
+  --ease: cubic-bezier(.22, .9, .24, 1);
+  --spring: cubic-bezier(.34, 1.4, .4, 1);
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -22,9 +28,10 @@
 html, body {
   margin: 0; height: 100%; overflow: hidden;
   background: var(--bg); color: var(--label);
-  font: 400 17px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text",
+  font: 400 16px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter",
         "Segoe UI", Roboto, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
   overscroll-behavior: none;
 }
 
@@ -39,73 +46,96 @@ html, body {
   background: var(--bg); overflow: hidden;
 }
 .scene { position: absolute; inset: 0; width: 100%; height: 100%; }
+.ambient { pointer-events: none; }
 
+/* Pavement under the roadway, so the kerb has something to stand against. */
+.gutter { fill: none; stroke: #0f1115; stroke-linecap: round; stroke-linejoin: round; }
 /* The roadway is the real centreline, stroked to the street's actual width, so
    a curved block looks curved and a skewed junction looks skewed. */
-.road { fill: none; stroke: var(--road); stroke-width: 46; stroke-linecap: round;
+.road { fill: none; stroke: url(#asphalt); stroke-width: 46; stroke-linecap: round;
         stroke-linejoin: round; }
 .centerline {
-  fill: none; stroke: #39424f; stroke-width: 1.6;
-  stroke-dasharray: 9 11; stroke-linecap: round;
+  fill: none; stroke: #3b424e; stroke-width: 1.3;
+  stroke-dasharray: 10 12; stroke-linecap: round; opacity: .9;
 }
-.context path { fill: none; stroke: #161a20; stroke-width: 34; stroke-linecap: round;
+.context path { fill: none; stroke: #111317; stroke-width: 34; stroke-linecap: round;
                 stroke-linejoin: round; }
 
 /* Each kerb is tinted by its own status; neither is chosen for you. */
 .kerb {
-  fill: none; stroke: #2a313a; stroke-width: 5; stroke-linecap: round;
+  fill: none; stroke: #2c323c; stroke-width: 5; stroke-linecap: round;
   transition: stroke .45s ease, opacity .45s ease;
 }
 .kerb[data-tone="ok"]    { stroke: var(--green); }
 .kerb[data-tone="soon"]  { stroke: var(--amber); }
 .kerb[data-tone="now"]   { stroke: var(--red); }
-.kerb[data-tone="muted"] { stroke: #6c7784; }
-.kerb[data-active="false"] { opacity: .62; }
+.kerb[data-tone="muted"] { stroke: #6a7482; }
+.kerb[data-active="false"] { opacity: .55; }
 .kerb[data-active="true"]  { opacity: 1; filter: url(#glow); }
 
-/* The car lands with a little weight rather than teleporting. */
+/* --- the car ---------------------------------------------------------------- */
 .car {
-  transition: transform .7s cubic-bezier(.34, .9, .28, 1);
+  transition: transform .8s var(--ease);
   transform: translate(180px, 250px);
 }
+.car-shadow  { fill: #000; opacity: .55; filter: url(#soft); }
+.car-wheel   { fill: #0b0d10; }
+.car-body    { fill: url(#paint); }
+.car-outline { fill: none; stroke: #fff; stroke-width: 1.2; stroke-dasharray: 2.4 1.8; opacity: 0; }
+.car-mirror  { fill: #d9dde3; }
+.car-glass   { fill: url(#glass); }
+.car-roof    { fill: url(#roofglass); }
+.car-crease  { fill: none; stroke: #c3c9d2; stroke-width: .35; opacity: .8; }
+.car-sheen   { fill: none; stroke: #fff; stroke-width: .5; opacity: .55; stroke-linecap: round; }
+.car-head    { fill: #fff6d9; }
+.car-tail    { fill: #ff3b30; opacity: .9; }
+.car-beams   { opacity: 0; transition: opacity .6s ease; }
+.car-beam    { fill: #fff2c2; filter: url(#lamp); opacity: .55; }
+
+/* An unconfirmed guess: a hollow car, so it never reads as a fact. */
+.car--guess .car-shell { opacity: .42; }
+.car--guess .car-outline { opacity: .95; }
+.car--guess .car-shadow { opacity: .2; }
+/* Waiting in the middle of the road for a side: lights on, idling. */
+.car--placing .car-beams { opacity: 1; }
+.car--placing .car-shell { animation: idle 2.6s ease-in-out infinite; }
+@keyframes idle { 50% { opacity: .72; } }
+
 /* A slow drift in, so the block settles under the car rather than snapping. */
-.scene { animation: settle .9s cubic-bezier(.22, .8, .2, 1); }
-@keyframes settle { from { opacity: 0; transform: scale(1.06); } }
-@media (prefers-reduced-motion: reduce) { .scene { animation: none; } }
-.car-body  { fill: #eef1f5; }
-.car-glass { fill: #2b323c; }
-.car-roof  { fill: #cdd4dd; }
-.car--placing { animation: hover 2.4s ease-in-out infinite; }
-@keyframes hover { 50% { opacity: .55 } }
+.scene { animation: settle 1.1s var(--ease); }
+@keyframes settle { from { opacity: 0; transform: scale(1.05); } }
 
 .vignette { pointer-events: none; }
 
-/* Kerb labels sit in HTML so they stay upright and tappable. */
-/* Sit the labels above the car, not on top of it -- at 50% they covered it. */
-/* Kept clear of the middle of the view: the roadway occupies roughly 44-52% of
-   the width, and a wider card covered the very kerb it was labelling. */
+/* Kerb tags on the stage: compact, upright, tappable. The full cards live in
+   the panel below; these just mark which line is which. */
 .kerb-label {
-  position: absolute; top: 18%; left: 2.5%;
-  max-width: 36%; padding: 10px 12px;
-  border: 1.5px solid var(--hair); border-radius: 13px;
-  background: #14171cdb; -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
-  color: var(--label); font: inherit; font-size: 13px; line-height: 1.3;
+  position: absolute; top: 16%; left: 3%;
+  max-width: 40%; padding: 8px 11px;
+  border: 1px solid var(--hair-2); border-radius: 10px;
+  background: #0b0c0ecc; -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  color: var(--label); font: inherit; font-size: 12px; line-height: 1.3;
   text-align: left; cursor: pointer;
+  transition: transform .14s var(--ease), border-color .25s ease, box-shadow .25s ease;
 }
-.kerb-label--b { left: auto; right: 2.5%; }
-.kerb-label[aria-pressed="true"] { border-color: currentColor; }
-.kerb-label .kl-side { display: block; font-size: 14.5px; font-weight: 650; }
-.kerb-label .kl-meta { display: block; margin-top: 1px; color: var(--label-2); }
-.kerb-label .kl-state { display: block; margin-top: 5px; font-weight: 650; }
-.kerb-label[data-tone="ok"]    .kl-state { color: var(--green); }
-.kerb-label[data-tone="soon"]  .kl-state { color: var(--amber); }
-.kerb-label[data-tone="now"]   .kl-state { color: var(--red); }
-.kerb-label[data-tone="muted"] .kl-state { color: var(--label-2); }
+.kerb-label--b { left: auto; right: 3%; text-align: right; }
+.kerb-label[aria-pressed="true"] { border-color: currentColor; box-shadow: 0 0 0 1px currentColor inset; }
+.kerb-label .kl-side { display: block; font-size: 11px; font-weight: 600; letter-spacing: .08em;
+                       text-transform: uppercase; color: var(--label-2); }
+.kerb-label .kl-meta { display: none; }
+.kerb-label .kl-state { display: block; margin-top: 3px; font-size: 13px; font-weight: 600; }
+.kerb-label[data-tone="ok"]    .kl-state, .kerb-label[data-tone="ok"]    { color: var(--green); }
+.kerb-label[data-tone="soon"]  .kl-state, .kerb-label[data-tone="soon"]  { color: var(--amber); }
+.kerb-label[data-tone="now"]   .kl-state, .kerb-label[data-tone="now"]   { color: var(--red); }
+.kerb-label[data-tone="muted"] .kl-state, .kerb-label[data-tone="muted"] { color: var(--label-2); }
+.kerb-label .kl-side { color: var(--label-2); }
+.kerb-label:active { transform: scale(.96); }
 
 .rose {
   position: absolute; top: 14px; right: 14px;
   width: 38px; height: 38px; border-radius: 50%;
-  background: #14171ccc; border: 1px solid var(--hair);
+  background: #0b0c0ecc; border: 1px solid var(--hair-2);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
 }
 .needle {
   position: absolute; left: 50%; top: 50%;
@@ -120,109 +150,152 @@ html, body {
 
 .facing {
   position: absolute; right: 12px; top: 58px; margin: 0;
-  max-width: 62%; padding: 8px 11px; border-radius: 11px;
-  background: #14171ccc; border: 1px solid var(--hair);
+  max-width: 62%; padding: 8px 11px; border-radius: 10px;
+  background: #0b0c0ecc; border: 1px solid var(--hair-2);
   font-size: 12px; line-height: 1.35; color: var(--label-2); text-align: right;
 }
 
 .aim {
   position: absolute; left: 12px; right: 12px; bottom: 12px;
   min-height: 46px; padding: 12px 14px;
-  border: 1px solid var(--blue); border-radius: 13px;
-  background: #0a84ffe0; color: #fff;
-  font: inherit; font-size: 14.5px; font-weight: 600; cursor: pointer;
+  border: 1px solid #fff; border-radius: var(--radius-s);
+  background: #fff; color: #000;
+  font: inherit; font-size: 13px; font-weight: 600; letter-spacing: .04em; cursor: pointer;
 }
 
 .parked {
   position: absolute; top: 14px; left: 14px;
-  padding: 7px 12px; border-radius: 999px;
-  background: #14171ccc; border: 1px solid var(--hair);
-  font-size: 12px; color: var(--label-2);
+  padding: 6px 12px; border-radius: 999px;
+  background: #0b0c0ecc; border: 1px solid var(--hair-2);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  font-size: 11.5px; letter-spacing: .04em; color: var(--label-2);
 }
 
 /* --- panel ----------------------------------------------------------------- */
 .panel {
-  flex: 0 0 auto; max-height: 58%;
+  position: relative;
+  flex: 0 0 auto; max-height: 62%;
   overflow-y: auto; -webkit-overflow-scrolling: touch;
-  padding: 16px 20px calc(env(safe-area-inset-bottom, 0px) + 18px);
-  background: var(--surface);
+  padding: 10px 20px calc(env(safe-area-inset-bottom, 0px) + 18px);
+  background: linear-gradient(180deg, #0c0d0f 0%, var(--surface) 100%);
   border-radius: var(--radius) var(--radius) 0 0;
-  box-shadow: 0 -1px 0 var(--hair);
+  box-shadow: 0 -1px 0 var(--hair), 0 -24px 48px #000000aa;
+  animation: rise .7s var(--ease);
 }
-.status { font-size: 15px; color: var(--label-2); padding: 6px 0; }
+@keyframes rise { from { transform: translateY(28px); opacity: 0; } }
+.grip {
+  width: 36px; height: 4px; margin: 0 auto 10px;
+  border-radius: 2px; background: var(--hair-2);
+}
+.status { font-size: 14px; color: var(--label-2); padding: 6px 0; letter-spacing: .01em; }
 .status[data-tone="error"] { color: var(--red); }
 
 .recall {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   margin-bottom: 14px; padding: 12px 14px;
-  border-radius: 13px; background: var(--surface-2);
-  font-size: 14px; color: var(--label-2);
+  border-radius: var(--radius-s); background: var(--surface-2); border: 1px solid var(--hair);
+  font-size: 13.5px; color: var(--label-2);
 }
 .recall span { flex: 1 1 auto; }
 
 .rival {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  margin-bottom: 14px; padding: 12px 14px; border-radius: 13px;
-  background: #ff9f0a1a; box-shadow: inset 0 0 0 1.5px var(--amber);
-  font-size: 13.5px; line-height: 1.45; color: var(--label);
+  margin-bottom: 14px; padding: 12px 14px; border-radius: var(--radius-s);
+  background: #ffb3400f; border: 1px solid #ffb34055;
+  font-size: 13px; line-height: 1.45; color: var(--label);
 }
 .rival span { flex: 1 1 auto; }
 
-.detail h1 { margin: 0; font-size: 26px; font-weight: 680; letter-spacing: -.5px; }
-.prompt { margin: 4px 0 0; font-size: 15px; color: var(--label-2); }
-
-/* An unconfirmed guess: hollow car, so it never reads as a fact. */
-.car--guess .car-body  { fill: none; stroke: #eef1f5; stroke-width: 2.5; stroke-dasharray: 5 4; }
-.car--guess .car-glass { fill: #39424e; }
-.car--guess .car-roof  { fill: #5b6675; }
+/* The street name is a label; the verdict is the headline. */
+.detail { animation: fadeup .6s var(--ease) both; }
+@keyframes fadeup { from { opacity: 0; transform: translateY(10px); } }
+.detail h1 {
+  margin: 2px 0 0; font-size: 12px; font-weight: 600; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--label-2);
+}
+.prompt { margin: 14px 0 0; font-size: 14px; color: var(--label-2); }
 
 .curb {
   display: flex; flex-direction: column; gap: 3px;
-  margin-top: 14px; padding: 12px 14px; border-radius: 12px;
-  background: var(--surface-2); font-size: 14px; line-height: 1.4;
+  margin-top: 14px; padding: 12px 14px; border-radius: var(--radius-s);
+  background: var(--surface-2); border: 1px solid var(--hair); font-size: 14px; line-height: 1.4;
 }
 /* A kerb you cannot park at outranks any schedule below it. */
-.curb[data-kind="no_park"] {
-  background: #ff453a1a; box-shadow: inset 0 0 0 1.5px var(--red);
-}
-.curb[data-kind="no_park"] .curb-what { color: var(--red); font-weight: 650; }
+.curb[data-kind="no_park"] { background: #ff453a12; border-color: #ff453a66; }
+.curb[data-kind="no_park"] .curb-what { color: var(--red); font-weight: 600; }
 .curb-what { color: var(--label); }
 .curb-when { font-size: 12.5px; color: var(--label-3); }
 
 .confirm {
   margin-top: 14px; padding: 13px 14px;
-  border: 1px solid var(--blue); border-radius: 13px; background: #0a84ff14;
+  border: 1px solid var(--hair-2); border-radius: var(--radius-s); background: var(--surface-2);
 }
-.confirm-q { margin: 0 0 11px; font-size: 14.5px; line-height: 1.4; color: var(--label); }
+.confirm-q { margin: 0 0 11px; font-size: 14px; line-height: 1.4; color: var(--label); }
 .confirm-row { display: flex; gap: 9px; }
-.confirm-row .btn { min-height: 42px; font-size: 14.5px; }
+.confirm-row .btn { min-height: 42px; font-size: 12.5px; }
 
-.verdict { margin-top: 14px; }
-.headline { margin: 0; font-size: 34px; line-height: 1.08; font-weight: 760; letter-spacing: -.9px; }
+.verdict { margin-top: 8px; }
+.headline {
+  margin: 0; font-size: 38px; line-height: 1.04; font-weight: 300; letter-spacing: -1.1px;
+  text-wrap: balance;
+}
 .headline[data-tone="ok"]    { color: var(--green); }
 .headline[data-tone="soon"]  { color: var(--amber); }
-.headline[data-tone="now"]   { color: var(--red); }
+.headline[data-tone="now"]   { color: var(--red); font-weight: 400; }
 .headline[data-tone="muted"] { color: var(--label); }
-.sub { margin: 6px 0 0; font-size: 16px; color: var(--label-2); }
+.sub { margin: 8px 0 0; font-size: 15px; line-height: 1.45; color: var(--label-2); }
 .note {
-  margin: 12px 0 0; padding: 11px 13px; border-radius: 11px;
+  margin: 12px 0 0; padding: 11px 13px; border-radius: var(--radius-s);
   background: var(--surface-2); font-size: 13.5px; line-height: 1.45;
 }
 
-.overflow { margin-top: 14px; }
-.overflow-head {
-  margin: 0 0 10px; font-size: 13.5px; line-height: 1.45; color: var(--label-2);
+/* --- the two kerbs, as cards --------------------------------------------- */
+.sides {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px;
 }
+.side {
+  position: relative; display: flex; flex-direction: column; gap: 4px;
+  min-height: 136px; padding: 13px 13px 12px;
+  border: 1px solid var(--hair); border-radius: 12px;
+  background: linear-gradient(180deg, var(--surface-2), var(--surface));
+  color: var(--label); font: inherit; text-align: left; cursor: pointer;
+  transition: transform .16s var(--ease), border-color .25s ease, background .25s ease;
+  animation: cardin .6s var(--ease) both;
+  animation-delay: calc(var(--i, 0) * 90ms + 80ms);
+}
+@keyframes cardin { from { opacity: 0; transform: translateY(14px) scale(.98); } }
+.side:active { transform: scale(.97); }
+.side-top { display: flex; align-items: center; justify-content: space-between; }
+.side-name { font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--label-2); }
+.side-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--label-3); box-shadow: 0 0 0 0 transparent; }
+.side-state { margin-top: 6px; font-size: 19px; line-height: 1.12; font-weight: 500; letter-spacing: -.3px; }
+.side-detail { font-size: 12.5px; line-height: 1.4; color: var(--label-2); }
+.side-meta { margin-top: auto; padding-top: 6px; font-size: 12px; color: var(--label-3); }
+.side-cta {
+  margin-top: 8px; padding: 8px 0; border-top: 1px solid var(--hair);
+  font-size: 11.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--label);
+}
+.side[data-tone="ok"]    { --tone: var(--green); }
+.side[data-tone="soon"]  { --tone: var(--amber); }
+.side[data-tone="now"]   { --tone: var(--red); border-color: #ff453a66; }
+.side[data-tone="muted"] { --tone: var(--label-2); }
+.side .side-state, .side .side-dot { color: var(--tone); background: var(--tone); }
+.side .side-state { background: none; }
+.side[data-tone="now"] .side-dot { animation: dotpulse 1.2s ease-in-out infinite; }
+@keyframes dotpulse { 50% { box-shadow: 0 0 0 6px #ff453a2e; } }
+
+.overflow { margin-top: 14px; }
+.overflow-head { margin: 0 0 10px; font-size: 13.5px; line-height: 1.45; color: var(--label-2); }
 .overflow-row {
   display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
   width: 100%; margin-bottom: 7px; padding: 12px 14px;
-  border: 0; border-radius: 12px; background: var(--surface-2);
+  border: 1px solid var(--hair); border-radius: var(--radius-s); background: var(--surface-2);
   font: inherit; color: var(--label); text-align: left; cursor: pointer;
-  box-shadow: inset 0 0 0 1.5px transparent;
 }
-.overflow-row[aria-pressed="true"] { box-shadow: inset 0 0 0 1.5px var(--blue); }
+.overflow-row[aria-pressed="true"] { border-color: #fff; }
 .of-when { font-size: 14px; }
-.of-state { font-size: 14px; font-weight: 650; white-space: nowrap; }
+.of-state { font-size: 14px; font-weight: 600; white-space: nowrap; }
 .overflow-row[data-tone="ok"]    .of-state { color: var(--green); }
 .overflow-row[data-tone="soon"]  .of-state { color: var(--amber); }
 .overflow-row[data-tone="now"]   .of-state { color: var(--red); }
@@ -232,70 +305,74 @@ html, body {
    rule sitting on the row it belongs to. */
 .rules {
   margin-top: 14px; border-radius: 12px; background: var(--surface-2);
-  overflow: hidden;
+  border: 1px solid var(--hair); overflow: hidden;
 }
 .rule {
   display: flex; align-items: flex-start; gap: 10px;
-  padding: 11px 14px; font-size: 13.5px; line-height: 1.4;
+  padding: 12px 14px; font-size: 13.5px; line-height: 1.4;
 }
 .rule + .rule { border-top: 1px solid var(--hair); }
 .rule-main { flex: 1 1 auto; min-width: 0; }
 .rule-label {
-  display: block; font-size: 11px; letter-spacing: .04em; text-transform: uppercase;
-  color: var(--label-3); margin-bottom: 2px;
+  display: block; font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--label-3); margin-bottom: 3px;
 }
 .rule-text { display: block; color: var(--label); }
 .rule-note { display: block; color: var(--label-3); font-size: 12.5px; margin-top: 3px; }
-.rule[data-tone="now"]  .rule-text { color: var(--red); font-weight: 650; }
+.rule[data-tone="now"]  .rule-text { color: var(--red); font-weight: 600; }
 .rule[data-tone="soon"] .rule-text { color: var(--amber); }
 .rule[data-tone="ok"]   .rule-text { color: var(--label); }
 .rule .chip { flex: 0 0 auto; align-self: center; }
 
 .limits { display: flex; align-items: center; gap: 7px; margin-top: 14px; flex-wrap: wrap; }
 .chip {
-  min-height: 34px; padding: 7px 14px; border: 1px solid var(--hair);
+  min-height: 34px; padding: 7px 14px; border: 1px solid var(--hair-2);
   border-radius: 999px; background: transparent; color: var(--label-2);
-  font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+  font: inherit; font-size: 12.5px; font-weight: 600; letter-spacing: .04em; cursor: pointer;
+  transition: transform .14s var(--ease), background .2s ease;
 }
-.chip--on { background: var(--surface-2); color: var(--label); border-color: var(--blue); }
+.chip:active { transform: scale(.95); }
+.chip--on { background: var(--surface-3); color: var(--label); border-color: #ffffff55; }
 .chip .x { margin-left: 5px; color: var(--label-3); }
 .chip-label { font-size: 12.5px; color: var(--label-3); }
-.chip--pm { margin-left: auto; color: var(--blue); border-color: #0a84ff55; }
+.chip--pm { margin-left: auto; color: #fff; border-color: #ffffff55; }
 
-.actions { display: flex; gap: 9px; margin-top: 16px; flex-wrap: wrap; }
+.actions { display: flex; gap: 9px; margin-top: 18px; flex-wrap: wrap; }
 /* Map and Compass are for checking the app, not for parking the car. */
-.actions--minor { margin-top: 9px; gap: 7px; }
+.actions--minor { margin-top: 10px; gap: 7px; }
 .btn {
-  flex: 1 1 auto; min-height: 46px; padding: 12px 16px;
-  border: 0; border-radius: 13px; background: var(--surface-2); color: var(--label);
-  font: inherit; font-size: 15px; font-weight: 600; cursor: pointer;
+  flex: 1 1 auto; min-height: 48px; padding: 12px 16px;
+  border: 1px solid var(--hair-2); border-radius: var(--radius-s);
+  background: var(--surface-2); color: var(--label);
+  font: inherit; font-size: 13px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+  cursor: pointer;
+  transition: transform .14s var(--ease), opacity .2s ease, background .2s ease;
 }
-.btn:active { opacity: .7; }
-.btn--primary { background: var(--blue); color: #fff; flex: 2 1 auto; }
-/* Present but not competing: the calendar export is the zero-setup fallback for
-   anyone who does not want to wire up a Shortcut. */
-.btn--quiet { flex: 0 0 auto; background: transparent; color: var(--label-3); font-weight: 500; }
+.btn:active { transform: scale(.97); opacity: .85; }
+.btn--primary { background: #fff; color: #000; border-color: #fff; flex: 2 1 auto; }
+.btn--primary + .btn--primary { background: var(--surface-3); color: #fff; border-color: var(--hair-2); }
+.btn--quiet { flex: 0 0 auto; background: transparent; border-color: transparent; color: var(--label-3); font-weight: 500; }
 .btn--float {
   position: absolute; left: 50%; transform: translateX(-50%);
   bottom: calc(env(safe-area-inset-bottom, 0px) + 18px);
-  flex: 0 0 auto; min-width: 140px; background: var(--surface); z-index: 3;
+  flex: 0 0 auto; min-width: 140px; background: #fff; color: #000; z-index: 3;
 }
+.btn--float:active { transform: translateX(-50%) scale(.97); }
 
 .legal {
-  margin-top: 16px; padding-top: 13px; border-top: 1px solid var(--hair);
-  font-size: 12.5px; line-height: 1.55; color: var(--label-3);
+  margin-top: 18px; padding-top: 13px; border-top: 1px solid var(--hair);
+  font-size: 12px; line-height: 1.55; color: var(--label-3);
 }
 /* Secondary controls live on one quiet line rather than stacking up as a wall
-   of blue -- they are settings, not actions. */
+   of buttons -- they are settings, not actions. */
 .minor { display: flex; flex-wrap: wrap; gap: 4px 0; margin-top: 8px; }
 .minor .link { margin: 0; }
-.minor .link + .link::before {
-  content: '·'; margin: 0 7px; color: var(--hair);
-}
+.minor .link + .link::before { content: '·'; margin: 0 7px; color: var(--hair-2); }
 .legal strong { color: var(--label-2); }
 .link {
   padding: 0; margin-left: 4px; border: 0; background: none;
-  color: var(--blue); font: inherit; font-size: 12.5px; cursor: pointer;
+  color: var(--label-2); text-decoration: underline; text-underline-offset: 2px;
+  font: inherit; font-size: 12px; cursor: pointer;
 }
 .vintage { display: block; margin-top: 7px; }
 
@@ -304,19 +381,19 @@ html, body {
 #map { position: absolute; inset: 0; }
 .maplibregl-ctrl-attrib { font-size: 10px; }
 
-@media (prefers-reduced-motion: reduce) {
-  .car, .kerb, .needle { transition: none; }
-  .car--placing { animation: none; }
-}
-
 /* --- the sweeper ----------------------------------------------------------- */
 .sweeper { pointer-events: none; }
-.sweep-body  { fill: #ffd60a; }
-.sweep-cab   { fill: #2b323c; }
-.sweep-brush { fill: #8e8e93; transform-origin: 0 8px; animation: spin .45s linear infinite; }
-.sweep-dust  { fill: #ffd60a; opacity: .18; animation: puff 1.1s ease-in-out infinite; }
+.sweep-shadow { fill: #000; opacity: .5; filter: url(#soft); }
+.sweep-body   { fill: url(#sweeperPaint); }
+.sweep-hopper { fill: #d9871a; opacity: .9; }
+.sweep-cab    { fill: url(#glass); }
+.sweep-beacon { fill: #ffb340; animation: beacon .7s steps(2, end) infinite; }
+.sweep-brush  { fill: #8e9298; transform-origin: -3.4px 7.6px; animation: spin .4s linear infinite; }
+.sweep-brush--r { transform-origin: 3.4px 7.6px; animation-direction: reverse; }
+.sweep-dust   { fill: #ffd166; opacity: .16; filter: blur(1px); animation: puff 1.1s ease-in-out infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes puff { 50% { opacity: .05; transform: scale(1.35); } }
+@keyframes beacon { 50% { opacity: .25; } }
 
 /* A quiet nod when you are in the clear -- the glow breathes rather than sits. */
 .kerb[data-tone="ok"][data-active="true"] { animation: breathe 3.4s ease-in-out infinite; }
@@ -326,53 +403,40 @@ html, body {
 .kerb[data-tone="now"] { animation: alarm 1.15s ease-in-out infinite; }
 @keyframes alarm { 50% { opacity: .45; } }
 
-@media (prefers-reduced-motion: reduce) {
-  .sweep-brush, .sweep-dust, .kerb { animation: none !important; }
-}
-
 /* "You are here" as a pulse rather than a dropped pin -- a pin points at a
    place you chose, a dot is a place you are. */
 .here {
   width: 16px; height: 16px; border-radius: 50%;
-  background: var(--blue); box-shadow: 0 0 0 3px #0b0d10, 0 0 14px #0a84ffcc;
+  background: #fff; box-shadow: 0 0 0 3px #000, 0 0 14px #ffffffaa;
 }
 .here::after {
   content: ''; position: absolute; inset: -8px;
-  border-radius: 50%; border: 2px solid #0a84ff66;
+  border-radius: 50%; border: 2px solid #ffffff66;
   animation: ping 2.2s cubic-bezier(.2, .6, .3, 1) infinite;
 }
 @keyframes ping {
   0%   { transform: scale(.55); opacity: 1; }
   100% { transform: scale(1.5); opacity: 0; }
 }
-@media (prefers-reduced-motion: reduce) { .here::after { animation: none; } }
 
-/* The landing hop. Transform is owned by moveCar, so the squash lives on the
-   car's own shapes instead of fighting it. */
-.car--land .car-body, .car--land .car-glass, .car--land .car-roof {
-  animation: land .5s cubic-bezier(.3, 1.5, .4, 1);
-}
+/* The landing: suspension compresses, then settles. Transform is owned by
+   moveCar, so the squash lives on the shell instead of fighting it. */
+.car--land .car-shell { animation: land .55s var(--spring); }
 @keyframes land {
-  0%   { transform: scale(1.22, .8); }
-  55%  { transform: scale(.94, 1.07); }
+  0%   { transform: scale(1.14, .86); }
+  55%  { transform: scale(.96, 1.05); }
   100% { transform: scale(1, 1); }
 }
 
-/* The sweeper leaves the kerb behind it visibly cleaner for a moment. */
-.sweep-dust { filter: blur(1px); }
-
 /* The verdict arrives rather than blinking into place. */
-.headline { animation: verdict .45s cubic-bezier(.2, .8, .25, 1); }
-@keyframes verdict {
-  from { opacity: 0; transform: translateY(8px) scale(.97); }
-}
-
-/* Tapping a kerb label should feel like pressing something. */
-.kerb-label:active { transform: scale(.96); }
-.kerb-label { transition: transform .12s ease, border-color .2s ease; }
+.headline { animation: verdict .5s var(--ease); }
+@keyframes verdict { from { opacity: 0; transform: translateY(8px); } }
 
 @media (prefers-reduced-motion: reduce) {
-  .car--land .car-body, .car--land .car-glass, .car--land .car-roof,
-  .headline { animation: none; }
-  .kerb-label:active { transform: none; }
+  .scene, .panel, .detail, .side, .headline, .car--land .car-shell,
+  .car--placing .car-shell { animation: none !important; }
+  .car, .kerb, .needle, .side, .btn, .chip, .kerb-label { transition: none; }
+  .sweep-brush, .sweep-dust, .sweep-beacon, .kerb, .side-dot { animation: none !important; }
+  .here::after { animation: none; }
+  .kerb-label:active, .side:active, .btn:active, .chip:active { transform: none; }
 }
